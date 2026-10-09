@@ -48,6 +48,23 @@ all numbers are measured on **fictional demo data** unless marked "estimate".
   `-` or `@` as a formula. Every cell is prefixed with `'` when it starts with one of those.
   Easy to miss, and it's the leads file a non-technical owner will double-click.
 
+- **Lead save crashed in Docker with HTTP 500.** The container runs as a non-root user, but
+  `./var` bind-mounted from the host was root-owned:
+  `PermissionError: [Errno 13] Permission denied: '/srv/var/leads.csv'`. Fix: a named volume
+  (inherits ownership from the image) and, more importantly, a storage failure now tells the
+  visitor "not saved, please call us" instead of a 500. The visitor must never *think* they booked.
+- **Building the image in the (sandboxed) build environment failed twice** for reasons that
+  don't apply to a normal machine: Docker Hub returned `429 Too Many Requests` for
+  `python:3.12-slim`, and pip inside the container rejected the sandbox's TLS proxy
+  (`CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain`). I verified locally
+  with a mirror image and a throwaway Dockerfile that trusted the proxy CA, kept the repo
+  Dockerfile clean, and added a `docker compose up` smoke test to CI so the real build is
+  checked on a clean runner.
+- **n8n CLI import failed** with `SQLITE_CONSTRAINT: NOT NULL constraint failed: workflow_entity.id`.
+  The UI import tolerates a missing workflow `id`; the CLI doesn't. Added an `id`.
+- **Webhook security.** A lead webhook URL alone is a public form anyone can spam. Added
+  `LEAD_WEBHOOK_SECRET` → `X-Webhook-Secret` header, checked by n8n's Header Auth.
+
 ## Measured numbers (demo data)
 
 `python scripts/eval.py`, mock mode, 52 questions in `eval/questions.json`. Caveat: I wrote the
@@ -71,6 +88,17 @@ could not verify that (see below).
 I deliberately did **not** add synonyms for the missed eval questions: that would only fit the test.
 Lowering coverage to 0.34 answers one more in-scope question on this set; I kept 0.5 because a
 handoff costs less than a wrong answer.
+
+Other numbers:
+- Test suite: 83 tests, ~2 s, no network (mock mode).
+- Prompt size sent to Claude for the 26 answerable eval questions: mean ~1,540 characters
+  (≈ 380 tokens by the 4-characters-per-token rule, an **estimate**), max ≈ 540 tokens.
+  At Haiku 4.5 list price ($1 / $5 per MTok), with ~150 tokens of history and ~60 output tokens,
+  that's ≈ USD 0.001 per answered question (**estimate**).
+- Docker image builds and serves `/`, `/widget.js` and `/api/chat`; a full booking flow wrote the
+  expected row (`'+442079460958` with the formula-escape prefix) to the volume.
+- Widget checked in headless Chromium: answer, handoff and refusal render; sending
+  `<img src=x onerror=alert(1)>` renders as text (0 `<img>` elements injected, 0 page errors).
 
 **Not measured:** real-model answer quality, latency and token cost. No `ANTHROPIC_API_KEY` was
 available in the build environment. `MOCK_LLM=0 ANTHROPIC_API_KEY=… python scripts/eval.py`
