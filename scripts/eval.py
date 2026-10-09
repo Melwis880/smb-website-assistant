@@ -54,16 +54,20 @@ def main() -> int:
             latencies.append((time.perf_counter() - t) * 1000)
             return reply
 
-        top1 = top3 = routed = 0
+        top1 = top3 = answered = grounded = 0
         for q, title in qs["in_scope"]:
             ranked = [h.chunk.title for h in engine._relevant(q)]
             top1 += bool(ranked) and ranked[0] == title
             top3 += title in ranked[:3]
             reply = ask(q)
-            ok = reply.type == "answer"
-            routed += ok
-            if not ok or title not in ranked[:3]:
-                failures.append(f"in_scope: {q!r} -> {reply.type}, top3={ranked[:3]}")
+            is_answer = reply.type == "answer"
+            # "grounded" = answered AND the expected section was among the sections given to the model
+            right_section = is_answer and any(src.endswith(f"> {title}") for src in reply.sources)
+            answered += is_answer
+            grounded += right_section
+            if not right_section:
+                kind = "WRONG SECTION" if is_answer else reply.type
+                failures.append(f"in_scope: {q!r} -> {kind}, top3={ranked[:3]}")
 
         def rate(group: str, expected: str) -> int:
             n = 0
@@ -80,7 +84,9 @@ def main() -> int:
 
     n_in = len(qs["in_scope"])
     print(f"Model: {engine.model.name}  (DEMO DATA - fictional clinic)")
-    print(f"In-scope answered:         {routed}/{n_in}")
+    print(f"In-scope answered:         {answered}/{n_in}")
+    print(f"  ...from expected section: {grounded}/{n_in}")
+    print(f"  ...without it (wrong):    {answered - grounded}/{n_in}")
     print(f"Retrieval top-1 correct:   {top1}/{n_in}")
     print(f"Retrieval top-3 correct:   {top3}/{n_in}")
     print(f"Out-of-scope -> handoff:   {oos}/{len(qs['out_of_scope'])}")

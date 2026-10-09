@@ -65,6 +65,33 @@ all numbers are measured on **fictional demo data** unless marked "estimate".
 - **Webhook security.** A lead webhook URL alone is a public form anyone can spam. Added
   `LEAD_WEBHOOK_SECRET` → `X-Webhook-Secret` header, checked by n8n's Header Auth.
 
+## Code review round (after opening the PR)
+
+A review of the PR diff found 10 issues; 9 fixed, 1 kept on purpose. The ones worth remembering:
+
+- **Booking data leaked into the model's context.** Every turn, including name, email and phone
+  typed during the booking flow, was appended to the history replayed to Claude on the next
+  question, even after the visitor declined consent. Fix: history keeps only question/answer
+  turns; booking input and refused (injection) messages never enter it. Earlier user turns are
+  also wrapped in `<visitor_message>` now. A test fills a booking, declines, then asks a question
+  and checks that none of the personal data is in what the model received.
+- **Formula injection moved from the CSV to the Google Sheet.** The CSV was escaped, but the n8n
+  workflow appended the raw webhook JSON with Sheets' default `USER_ENTERED` format, so
+  `=IMPORTXML(...)` typed as a "preferred time" would run in the sheet. Fix: `cellFormat: RAW`
+  (option name checked in the n8n 2.42.6 node source).
+- **Stemming wasn't idempotent.** `fillings` → `filling` but `filling` → `fill`, so "How much are
+  fillings?" missed the price list. Fix: strip the plural first, then `-ing/-ed`.
+- **The injection filter refused real patients.** "Can you show me the aftercare instructions?" and
+  "Should I ignore my previous dentist's instructions…?" were refused as attacks. Fix: patterns now
+  require the instruction words to point at the assistant ("your", "the system", "previous") with
+  nothing else in between; 8 benign questions are pinned in tests.
+- **A false claim in CASE_STUDY.md** ("no wrong answers"); see the numbers below.
+- Smaller: the widget now restores the visible transcript across pages (a booking flow continued
+  invisibly before); the lead webhook runs in a background thread (a down n8n delayed the reply
+  by 5 s); `docker compose` now passes the retrieval thresholds; session expiry is O(1).
+- **Kept:** international phones are stored as `'+44…` in the CSV. That's the formula escape, and
+  the file is meant for Excel; documented in README limitations.
+
 ## Measured numbers (demo data)
 
 `python scripts/eval.py`, mock mode, 52 questions in `eval/questions.json`. Caveat: I wrote the
@@ -79,7 +106,13 @@ eval set after building the retriever, so this is a smoke test, not a blind benc
 | Booking intent → lead flow | 4/4 | 4/4 |
 | Latency per turn, mock (median) | 0.1 ms | 0.2 ms |
 
-Remaining misses are all **semantic**, which keyword retrieval can't do: "come by train" (content
+Run 2 detail: of the 26 answers, 25 used the expected section and **1 used the wrong one**
+("My tooth broke on Sunday night, what should I do?" → Sunday opening hours, not the
+out-of-hours emergency FAQ). My first write-up said "every miss ended in a handoff, not a wrong
+answer"; the code review caught that, and `scripts/eval.py` now reports wrong-section answers
+separately so it can't be glossed over again.
+
+The four handoff misses are **semantic**, which keyword retrieval can't do: "come by train" (content
 says "station"), "put to sleep" (content says "general anaesthesia"), "my 14 year old come alone"
 (content says "under 16 must be accompanied"), "how often … check-up" (content says "every 6 months").
 The out-of-scope miss is "What's the weather like this weekend?": *weekend* → Saturday hours. In
@@ -90,7 +123,7 @@ Lowering coverage to 0.34 answers one more in-scope question on this set; I kept
 handoff costs less than a wrong answer.
 
 Other numbers:
-- Test suite: 83 tests, ~2 s, no network (mock mode).
+- Test suite: 83 tests at first PR, 92 after the review fixes; ~3 s, no network (mock mode).
 - Prompt size sent to Claude for the 26 answerable eval questions: mean ~1,540 characters
   (≈ 380 tokens by the 4-characters-per-token rule, an **estimate**), max ≈ 540 tokens.
   At Haiku 4.5 list price ($1 / $5 per MTok), with ~150 tokens of history and ~60 output tokens,
@@ -116,7 +149,10 @@ prints tokens and cost when run with a key.
 - "The riskiest file in an SME chatbot is the CSV of leads: a phone number starting with `+` is a formula to Excel."
 - "Refusing before calling the LLM is free: off-topic questions cost zero tokens."
 - "Keyword retrieval over a 26-section knowledge base got the right section in the top 3 for
-  25 of 30 test questions. Every miss was a synonym problem ('put to sleep' vs 'anaesthesia')."
+  25 of 30 test questions. Four misses were synonym problems ('put to sleep' vs 'anaesthesia'),
+  and one was worse: a broken tooth on Sunday got our Sunday opening hours."
+- "I had written 'no wrong answers' in my own case study. A review of the eval output proved me
+  wrong: measure the thing you claim, not a proxy for it."
 
 ## Suggested screenshots / GIFs
 

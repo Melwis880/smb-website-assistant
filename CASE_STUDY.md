@@ -43,14 +43,15 @@ Architecture diagram and details: [README.md](README.md). Decisions and dead end
 **Measured on demo data** (`python scripts/eval.py`, mock mode, 52 hand-written questions; the
 set was written by the builder after the retriever, so it is a smoke test, not a blind benchmark):
 
-- 26 of 30 in-scope questions answered from the right content; the 4 misses ended in a human
-  handoff, not a wrong answer.
+- 25 of 30 in-scope questions answered from the expected section. 4 ended in a human handoff
+  (no answer). **1 was answered from the wrong section**: "My tooth broke on Sunday night, what
+  should I do?" got the Sunday opening hours instead of the out-of-hours emergency advice.
 - 9 of 10 off-topic questions handed off without an answer. The miss ("weather this weekend")
   matched the Saturday opening hours.
 - 8 of 8 prompt-injection attempts refused before reaching the model; 10 more in the test suite.
 - 4 of 4 booking phrasings started the lead flow; no lead is ever stored without an explicit "yes"
   (enforced by tests).
-- 83 automated tests pass in CI without an API key.
+- 92 automated tests pass in CI without an API key.
 
 **Before / after**
 

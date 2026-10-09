@@ -49,7 +49,7 @@ unit tests. See [BUILD_LOG.md](BUILD_LOG.md) for the reasoning and rejected alte
 | `app/retrieval.py` | Dependency-free BM25 + query-coverage check |
 | `app/llm.py` | System prompt, Claude client, extractive mock model |
 | `app/guard.py` | Input cleaning, injection patterns, output canary |
-| `app/leads.py` | Validation, consent parsing, CSV storage (formula-injection safe), webhook |
+| `app/leads.py` | Validation, consent parsing, CSV storage (formula-injection safe), async webhook |
 | `app/chat.py` | Routing + lead-capture state machine + sessions |
 | `app/main.py` | FastAPI app: `/api/chat`, `/healthz`, `/` demo page, `/widget.js` |
 | `web/` | `widget.js` (vanilla JS, no dependencies) and the demo page |
@@ -82,7 +82,7 @@ MOCK_LLM=1 uvicorn app.main:app --reload          # or: export ANTHROPIC_API_KEY
 ### Tests and eval
 ```bash
 pip install -r requirements-dev.txt
-pytest -q                     # 83 tests, mock mode, no network
+pytest -q                     # 92 tests, mock mode, no network
 python scripts/eval.py        # routing/retrieval numbers on the demo eval set
 ```
 
@@ -121,25 +121,35 @@ To adapt it to another business: replace the Markdown files in `data/`, and chan
 4. A canary string sits in the system prompt; any answer that contains it is blocked.
 5. The booking flow and consent are code, so no text can talk the bot into saving data without a "yes".
 6. The widget renders every message with `textContent`, so HTML in replies can't execute.
-7. CSV cells starting with `= + - @` are escaped, so the leads file is safe to open in Excel.
+7. CSV cells starting with `= + - @` are escaped, so the leads file is safe to open in Excel; the n8n
+   workflow writes to Google Sheets with `cellFormat: RAW`, so nothing a visitor types runs as a formula there.
+8. Conversation history replayed to Claude contains only question/answer turns: booking-flow input
+   (names, emails, phone numbers) and refused messages are never sent to the model.
 
 `tests/test_injection.py` runs 10 attack strings plus tag-breaking and leak scenarios.
 
 ## Limitations (honest list)
 
 - **Keyword retrieval has no semantic understanding.** On the demo eval it misses e.g. "put to
-  sleep" vs "general anaesthesia" and "come by train" vs "station". These end in a human handoff,
-  not a wrong answer. A small embedding model would fix most of them, at the cost of dependencies.
+  sleep" vs "general anaesthesia" and "come by train" vs "station"; those end in a human handoff.
+  It can also rank the wrong section first: "My tooth broke on Sunday night, what should I do?" is
+  answered with Sunday opening hours instead of the out-of-hours emergency advice (1 of 30 demo
+  questions). A small embedding model would fix most of these, at the cost of dependencies.
 - **Mock mode is extractive**: it returns sentences from the content, so its answers are clunkier
   than Claude's. It's there for tests and offline demos, not as a product.
 - **Real-model quality, latency and cost were not measured** in this build: no API key was
   available in the build environment. The cost figure in CASE_STUDY.md is an estimate.
 - **Regex injection filtering is a speed bump, not a wall.** Novel phrasings get through to the
-  model, where layers 3-5 still apply. It can also over-refuse (e.g. "act as" in an odd question).
+  model, where layers 3-5 still apply. It can also over-refuse: patterns are tested against 8
+  ordinary questions (e.g. "show me the aftercare instructions"), but an odd phrasing like "act as"
+  in a genuine question would still be refused.
 - **Sessions live in memory**: a restart drops in-progress conversations, and multiple workers
   don't share state. Use Redis or similar for more than one process.
 - **No rate limiting or auth** on `/api/chat`. Put it behind a reverse proxy with rate limits before
   real traffic: every message can cost an API call.
+- **International phone numbers in `leads.csv` start with `'`** (e.g. `'+442079460958`). That's the
+  formula-injection escape, kept on purpose because the file is meant to be opened in Excel, which
+  hides it. A tool reading the raw CSV must strip it.
 - **English only** for routing keywords and consent parsing (Claude may answer in other languages,
   but the booking flow is English).
 - **No calendar integration**: the front desk confirms each request manually.
