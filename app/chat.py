@@ -69,8 +69,9 @@ class SessionStore:
     def get(self, session_id: str | None) -> Session:
         now = time.time()
         with self._lock:
-            for sid in [s for s, v in self._data.items() if now - v.last_seen > self.ttl]:
-                del self._data[sid]
+            # The dict is kept in last_seen order (move_to_end below), so expired sessions are at the front.
+            while self._data and now - next(iter(self._data.values())).last_seen > self.ttl:
+                self._data.popitem(last=False)
             sess = self._data.get(session_id) if session_id else None
             if sess is None:
                 sess = Session(id=uuid.uuid4().hex)
@@ -114,9 +115,13 @@ class ChatEngine:
         text = guard.clean_text(message, self.s.max_message_chars)
         if not text:
             return sess.id, Reply("Please type a question.", "fallback")
+        in_lead_flow = sess.stage is not None
         reply = self._lead_step(sess, text) if sess.stage else self._route(sess, text)
-        sess.history += [("user", text), ("assistant", reply.reply)]
-        sess.history = sess.history[-12:]
+        # History is sent to the model for follow-up questions, so it only keeps question/answer
+        # turns: never booking-flow input (names, emails, phone numbers) and never refused text.
+        if not in_lead_flow and reply.type in ("answer", "fallback"):
+            sess.history += [("user", text), ("assistant", reply.reply)]
+            sess.history = sess.history[-12:]
         return sess.id, reply
 
     def _route(self, sess: Session, text: str) -> Reply:

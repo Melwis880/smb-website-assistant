@@ -15,10 +15,12 @@ class SpyModel(MockModel):
 
     def __init__(self, fixed: str | None = None):
         self.calls: list[str] = []
+        self.histories: list[list[tuple[str, str]]] = []
         self.fixed = fixed
 
     def answer(self, question, hits, history):
         self.calls.append(question)
+        self.histories.append(list(history))
         return Answer(self.fixed) if self.fixed is not None else super().answer(question, hits, history)
 
 

@@ -40,6 +40,7 @@ def test_request_shape_and_usage():
     msgs = fake.kwargs["messages"]
     assert [m["role"] for m in msgs] == ["user", "assistant", "user"]
     assert "<context>" in msgs[-1]["content"] and "EUR 90" in msgs[-1]["content"]
+    assert msgs[0]["content"] == "<visitor_message>\nhi\n</visitor_message>"  # earlier turns are data too
 
 
 def test_api_errors_degrade_to_handoff():

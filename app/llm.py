@@ -66,7 +66,10 @@ class ClaudeModel:
 
         # Earlier turns are plain text; only the latest turn carries context, which keeps
         # the prompt small and makes "what about for kids?" follow-ups work.
-        messages = [{"role": role, "content": text} for role, text in history[-6:]]
+        messages = [
+            {"role": role, "content": f"<visitor_message>\n{text}\n</visitor_message>" if role == "user" else text}
+            for role, text in history[-6:]
+        ]
         messages.append({"role": "user", "content": build_user_turn(question, hits)})
         try:
             resp = self.client.messages.create(
