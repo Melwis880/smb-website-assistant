@@ -51,7 +51,8 @@ unit tests. See [BUILD_LOG.md](BUILD_LOG.md) for the reasoning and rejected alte
 | `app/guard.py` | Input cleaning, injection patterns, output canary |
 | `app/leads.py` | Validation, consent parsing, CSV storage (formula-injection safe), async webhook |
 | `app/chat.py` | Routing + lead-capture state machine + sessions |
-| `app/main.py` | FastAPI app: `/api/chat`, `/healthz`, `/` demo page, `/widget.js` |
+| `app/limits.py` | In-memory sliding-window rate limiter and daily LLM call budget |
+| `app/main.py` | FastAPI app: `/api/chat`, `/healthz`, `/` demo page, `/widget.js`; body cap, rate limit, security headers, daily lead purge |
 | `web/` | `widget.js` (vanilla JS, no dependencies) and the demo page |
 | `tests/` | pytest suite (runs in mock mode) |
 | `eval/`, `scripts/eval.py` | 52-question demo eval set and runner |
@@ -82,7 +83,7 @@ MOCK_LLM=1 uvicorn app.main:app --reload          # or: export ANTHROPIC_API_KEY
 ### Tests and eval
 ```bash
 pip install -r requirements-dev.txt
-pytest -q                     # 92 tests, mock mode, no network
+pytest -q                     # 149 tests, mock mode, no network
 python scripts/eval.py        # routing/retrieval numbers on the demo eval set
 ```
 
@@ -171,6 +172,19 @@ server {
 Behind a proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address; otherwise every visitor
 appears as the proxy's IP and they all share one rate limit.
 
+Other protections that are on by default:
+
+- **CORS:** same-origin only unless `ALLOWED_ORIGINS` lists the sites that embed the widget
+  (`*` works but logs a warning).
+- **Headers:** `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` everywhere; a CSP
+  on the demo page (`script-src 'self'`, `frame-ancestors 'none'`) and `default-src 'none'` on API responses.
+- **No API docs** (`/docs`, `/redoc`, `/openapi.json`) unless `ENABLE_DOCS=1`; `/healthz` says only `{"status": "ok"}`.
+- **Webhook:** `https://` only (plain http only to localhost), redirects refused, so lead data and
+  the shared secret can't be bounced to another host.
+- **Files:** `leads.csv` is created with `0600` permissions.
+- **Browser storage:** what a visitor types during the booking flow is stored as `[details hidden]`
+  in `sessionStorage`, and no bot reply repeats their name or contact details.
+
 ## Data retention
 
 The consent question says: *"We automatically delete this request after 90 days."*
@@ -203,8 +217,10 @@ what visitors agreed to, so it needs a new consent text version.
   in a genuine question would still be refused.
 - **Sessions live in memory**: a restart drops in-progress conversations, and multiple workers
   don't share state. Use Redis or similar for more than one process.
-- **No rate limiting or auth** on `/api/chat`. Put it behind a reverse proxy with rate limits before
-  real traffic: every message can cost an API call.
+- **Abuse limits are in memory, per process.** They reset on restart and aren't shared between
+  workers, and per-IP limits can be dodged with many IPs. The daily LLM budget caps the cost either
+  way. Use a reverse proxy with rate limits in production (see above). There is no auth on `/api/chat`
+  by design: anonymous visitors use it.
 - **International phone numbers in `leads.csv` start with `'`** (e.g. `'+442079460958`). That's the
   formula-injection escape, kept on purpose because the file is meant to be opened in Excel, which
   hides it. A tool reading the raw CSV must strip it.

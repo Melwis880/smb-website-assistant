@@ -92,6 +92,63 @@ A review of the PR diff found 10 issues; 9 fixed, 1 kept on purpose. The ones wo
 - **Kept:** international phones are stored as `'+44…` in the CSV. That's the formula escape, and
   the file is meant for Excel; documented in README limitations.
 
+## Security review
+
+An external security audit of the PR listed 5 must-fix items and 6 hardening items. All 11 are
+fixed, each in its own commit with tests (92 → 149 tests). Where a test could reproduce the issue,
+I checked that it fails on the old code.
+
+**What the audit found, and what changed**
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | Consent text promised deletion after 90 days; nothing deleted anything | `LeadStore.purge()` (atomic rewrite) runs at startup and every 24 h; n8n cleanup workflow deletes expired Sheet rows daily; the front-desk email no longer contains personal data; consent text now says "automatically delete" → `CONSENT_TEXT_VERSION` v2 |
+| 2 | Webhook followed redirects and accepted plain http | `https://` required (http only to localhost); custom redirect handler refuses all redirects |
+| 3 | No abuse limits | 16 KB body cap (413, also for chunked bodies), 20 msg/min per IP (429), 3 leads/day per IP, 1,000 LLM calls/day then non-LLM handoff; all env-configurable; nginx example in README |
+| 4 | Widget stored booking details in `sessionStorage` | Messages typed during the booking flow are stored as `[details hidden]` |
+| 5 | Two concurrent "yes" could race on the session; incomplete draft → 500 | Per-session `threading.Lock`; incomplete draft → polite restart, never 500 |
+| 6 | `ALLOWED_ORIGINS=*` by default | Same-origin by default; `*` logs a warning |
+| 7 | `/docs`, `/openapi.json` public; `/healthz` exposed model and mode | Off unless `ENABLE_DOCS=1`; healthz is `{"status": "ok"}` |
+| 8 | No security headers | nosniff + Referrer-Policy everywhere, CSP on the demo page and API |
+| 9 | Link filter only caught `http(s)://` and `www.` | Also bare domains, any `scheme://`, `hxxp`, `[.]`/`(dot)`, IPv4, `javascript:`/`data:` |
+| 10 | `leads.csv` created with default permissions | Created `0600`, also after a purge rewrite |
+| 11 | No upper version bounds | `anthropic>=1.0,<2`, `uvicorn<1`, dev deps bounded; fresh venv verified |
+
+**Things the fixes turned up that the audit didn't list**
+
+- **The redirect issue was a real secret leak, not just theory.** urllib follows a `302` on a POST as
+  a GET *and keeps custom headers*. The test's redirect target received `X-Webhook-Secret: s3cret`
+  before the fix. (A `307` is not followed by urllib for POST, so my first test version passed on
+  the old code and proved nothing. Switching to `302` exposed it.)
+- **The bot echoed the visitor's name** ("Thank you, Anna Smith!"). Masking user messages in the
+  widget wasn't enough, because the reply itself carried the name into `sessionStorage`. The reply no
+  longer contains it, and a test checks that no reply repeats booking details.
+- **`now or time.time()` bug in my own rate limiter**: `now=0` counts as false, so the test clock was
+  silently replaced by the real clock. Caught by the first limiter test; fixed to `if now is None`.
+- **The concurrency test needed a widened race window.** With the GIL, two threads almost never
+  interleave inside the consent step, so a naive test passes without the lock. Slowing
+  `parse_consent` by 0.2 s made it fail reliably on the old code (`TypeError` → HTTP 500).
+- **Behind a reverse proxy, per-IP limits see the proxy's IP** unless uvicorn trusts it
+  (`FORWARDED_ALLOW_IPS`). Documented, and the variable is forwarded in `docker-compose.yml`.
+- **Retention is a constant, not an env var.** A configurable retention period would let the
+  config contradict the consent text visitors agreed to. Changing it means a new consent version.
+- **Purge keeps rows with an unreadable date and logs them.** Silently deleting undatable data
+  would hide a bug; keeping it is visible.
+
+**Consciously left out (and why)**
+
+- **Redis / shared sessions and limits.** One process is what a single-clinic MVP runs. The README says
+  limits are per process and recommends nginx `limit_req` in front, which also covers multi-worker setups.
+- **Embeddings.** A retrieval-quality topic, not a security one; out of scope for this audit.
+- **SHA-pinning GitHub Actions.** Worth doing for a production repo. Here CI only runs tests with
+  read-only `contents` permission and no secrets, so a compromised action has little to steal.
+- **`'unsafe-inline'` for styles in the CSP.** The demo page and the widget inject `<style>`;
+  removing it means nonces or external CSS. Scripts stay `'self'` only, which is where XSS matters.
+- **Authentication on `/api/chat`.** Anonymous website visitors are the users; abuse is handled by
+  the limits, not by login.
+- **Real-credential test of the n8n workflows.** Both import cleanly; running them needs a Google
+  account and SMTP server.
+
 ## Measured numbers (demo data)
 
 `python scripts/eval.py`, mock mode, 52 questions in `eval/questions.json`. Caveat: I wrote the
@@ -123,7 +180,8 @@ Lowering coverage to 0.34 answers one more in-scope question on this set; I kept
 handoff costs less than a wrong answer.
 
 Other numbers:
-- Test suite: 83 tests at first PR, 92 after the review fixes; ~3 s, no network (mock mode).
+- Test suite: 83 tests at first PR, 92 after the code review, 149 after the security audit; ~4 s,
+  no network (mock mode).
 - Prompt size sent to Claude for the 26 answerable eval questions: mean ~1,540 characters
   (≈ 380 tokens by the 4-characters-per-token rule, an **estimate**), max ≈ 540 tokens.
   At Haiku 4.5 list price ($1 / $5 per MTok), with ~150 tokens of history and ~60 output tokens,
@@ -151,6 +209,10 @@ prints tokens and cost when run with a key.
 - "Keyword retrieval over a 26-section knowledge base got the right section in the top 3 for
   25 of 30 test questions. Four misses were synonym problems ('put to sleep' vs 'anaesthesia'),
   and one was worse: a broken tooth on Sunday got our Sunday opening hours."
+- "My webhook leaked its secret through a redirect. Python's urllib follows a 302 on a POST and
+  keeps your custom headers, so the secret went straight to whatever host the redirect named."
+- "Masking what users type isn't enough if the bot repeats it back: 'Thank you, Anna Smith!' put
+  the name right back into browser storage."
 - "I had written 'no wrong answers' in my own case study. A review of the eval output proved me
   wrong: measure the thing you claim, not a proxy for it."
 
