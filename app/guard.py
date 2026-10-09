@@ -36,7 +36,9 @@ _INJECTION_RE = re.compile("|".join(f"(?:{p})" for p in _PATTERNS), re.IGNORECAS
 
 def clean_text(text: str, max_chars: int) -> str:
     """Normalise unicode, drop control characters, collapse whitespace, cap length."""
-    text = unicodedata.normalize("NFKC", text)
+    # Cut before normalising too: NFKC can expand a character up to 18x (U+FDFA), and
+    # everything past max_chars would be thrown away anyway.
+    text = unicodedata.normalize("NFKC", text[:max_chars])
     text = "".join(ch for ch in text if ch in "\n\t" or unicodedata.category(ch)[0] != "C")
     text = re.sub(r"\s+", " ", text).strip()
     return text[:max_chars]

@@ -69,3 +69,9 @@ def test_prompt_marks_visitor_text_as_data():
 def test_clean_text_strips_control_chars_and_caps_length():
     assert clean_text("hi\u0000​ there‮", 100) == "hi there"
     assert len(clean_text("a" * 5000, 1000)) == 1000
+
+
+def test_clean_text_cuts_before_expanding_unicode():
+    # U+FDFA becomes 18 characters under NFKC; only the part we keep should be normalised.
+    out = clean_text("ﷺ" * 4000, 1000)
+    assert len(out) == 1000 and "ﷺ" not in out

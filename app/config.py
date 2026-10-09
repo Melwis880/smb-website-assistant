@@ -11,6 +11,8 @@ log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+# Longest visitor message: the API rejects longer ones (422), the widget input stops at it.
+MAX_MESSAGE_CHARS = 1000
 
 
 def _flag(name: str, default: str = "0") -> bool:
@@ -37,7 +39,7 @@ class Settings:
     rate_limit_per_minute: int = 20
     leads_per_ip_per_day: int = 3
     llm_daily_call_budget: int = 1000
-    max_message_chars: int = 1000
+    max_message_chars: int = MAX_MESSAGE_CHARS
     max_output_tokens: int = 400
     business_name: str = "Brightsmile Dental"
     handoff_contact: str = "+00 123 456 789 or hello@brightsmile.example"

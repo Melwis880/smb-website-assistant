@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from .chat import ChatEngine
-from .config import Settings
+from .config import MAX_MESSAGE_CHARS, Settings
 from .limits import SlidingWindowLimiter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -77,7 +77,7 @@ DEFAULT_CSP = "default-src 'none'; frame-ancestors 'none'"
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=4000)
+    message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
     session_id: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]*$")
 
 

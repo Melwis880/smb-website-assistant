@@ -30,6 +30,7 @@ def test_rejects_bad_input(settings, spy):
     assert c.post("/api/chat", json={"message": ""}).status_code == 422
     assert c.post("/api/chat", json={"message": "hi", "session_id": "../../etc"}).status_code == 422
     assert c.post("/api/chat", json={"message": "x" * 5000}).status_code == 422
+    assert c.post("/api/chat", json={"message": "x" * 1001}).status_code == 422  # same cap as the widget
 
 
 def test_docs_disabled_by_default(settings, spy):
