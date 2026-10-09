@@ -61,11 +61,26 @@ def validate_contact(raw: str) -> tuple[str, str]:
     raise ValidationError("Please give an email address or a phone number (7-15 digits).")
 
 
+# Anything link-like in the free-text time field: it ends up in a sheet the front desk reads,
+# so it must not carry clickable or copy-pasteable links (phishing via our own lead form).
+LINK_RE = re.compile(
+    r"""
+      [a-z][a-z0-9+.\-]{0,15}://                     # any scheme://, including hxxp:// and ftp://
+    | \b(?:hxxps?|h\*\*ps?|javascript|data|vbscript|file)\s*[:\[]   # defanged or script schemes
+    | \bwww\s*[.\[(]                                 # www.example / www[.]example
+    | \[\s*(?:\.|dot)\s*\] | \(\s*(?:\.|dot)\s*\)    # defanged dots: [.] (.) [dot]
+    | \b(?:\d{1,3}\.){3}\d{1,3}\b                     # IPv4 address
+    | \b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?=[/:?#]|\b)  # bare domain: evil.example/login
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
 def validate_preferred_time(raw: str) -> str:
     value = " ".join(raw.split())
     if not 2 <= len(value) <= 120:
         raise ValidationError("Please describe your preferred day/time in a few words (max 120 characters).")
-    if re.search(r"https?://|www\.", value, re.IGNORECASE):
+    if LINK_RE.search(value):
         raise ValidationError("Please describe your preferred day/time without links.")
     return value
 

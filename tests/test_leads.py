@@ -401,3 +401,45 @@ def test_replies_never_echo_booking_details(chat):
     replies = [chat(m).reply for m in (*BOOKING, "yes")]
     for detail in ("Anna Smith", "anna@example.com"):  # ("Tuesday morning" is also the bot's own example)
         assert not any(detail in r for r in replies)
+
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "evil.example/login",
+        "Tuesday, see example.com",
+        "check brightsmile-booking.co.uk",
+        "hxxp://evil.example",
+        "hxxps[:]//evil",
+        "HTTPS://EVIL.EXAMPLE",
+        "ftp://files.example",
+        "www.evil.example",
+        "www[.]evil[.]example",
+        "evil(dot)example",
+        "evil[dot]example",
+        "192.168.0.1/admin",
+        "javascript:alert(1)",
+        "data:text/html,hi",
+    ],
+)
+def test_preferred_time_rejects_links(link):
+    with pytest.raises(ValidationError):
+        validate_preferred_time(link)
+
+
+@pytest.mark.parametrize(
+    "ok",
+    [
+        "Tuesday morning",
+        "Mon.-Fri. after 4 p.m.",
+        "any time 10.30-12.00",
+        "e.g. Friday 9am",
+        "Sat. morning",
+        "next week, 14:00 or later",
+        "Wed 3.15pm",
+        "ASAP, i.e. tomorrow",
+    ],
+)
+def test_preferred_time_accepts_normal_times(ok):
+    assert validate_preferred_time(ok) == ok
