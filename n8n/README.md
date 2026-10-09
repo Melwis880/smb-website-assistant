@@ -36,7 +36,10 @@ Webhook (POST, header auth) → Pick lead fields → Append to Google Sheet
    ```
 
 The assistant always writes `leads.csv` first; the webhook is best-effort, so an n8n outage never
-loses a lead (it is logged as a warning).
+loses a lead. Network errors and 5xx responses are retried twice (after ~1 s and ~4 s); a 4xx or a
+redirect is not retried. A final failure is logged as an error and the lead is only in the CSV. A
+retry can deliver the same lead twice if n8n handled it but the response was lost, so dedupe on
+`session_id` if that matters.
 
 ## What was verified
 - Both JSON files import cleanly with the n8n CLI (`import:workflow`, n8n 2.42.6).

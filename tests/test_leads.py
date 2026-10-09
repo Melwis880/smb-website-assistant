@@ -443,3 +443,74 @@ def test_preferred_time_rejects_links(link):
 )
 def test_preferred_time_accepts_normal_times(ok):
     assert validate_preferred_time(ok) == ok
+
+
+def _webhook_server(statuses):
+    """Local webhook that answers with the given status codes in turn; returns (server, calls)."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    calls = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            calls.append(self.rfile.read(int(self.headers["Content-Length"])))
+            self.send_response(statuses[min(len(calls), len(statuses)) - 1])
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, calls
+
+
+def _wait_for(predicate, seconds=5.0):
+    import time
+
+    deadline = time.monotonic() + seconds
+    while not predicate() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    return predicate()
+
+
+def test_webhook_retries_server_errors(settings, spy, monkeypatch):
+    from dataclasses import replace
+
+    import app.leads as leads_mod
+    from app.chat import ChatEngine
+
+    monkeypatch.setattr(leads_mod, "WEBHOOK_BACKOFF_SECONDS", 0.01)
+    server, calls = _webhook_server([503, 200])
+    url = f"http://127.0.0.1:{server.server_port}/hook"
+    engine = ChatEngine(replace(settings, lead_webhook_url=url), model=spy)
+    sid = None
+    for m in (*BOOKING, "yes"):
+        sid, reply = engine.handle(sid, m)
+    assert reply.type == "lead_saved"
+    assert _wait_for(lambda: len(calls) == 2), f"expected a retry after 503, got {len(calls)} call(s)"
+    assert calls[0] == calls[1]  # the same lead, sent again
+    server.shutdown()
+
+
+def test_webhook_does_not_retry_client_errors(settings, spy, monkeypatch, caplog):
+    import time
+    from dataclasses import replace
+
+    import app.leads as leads_mod
+    from app.chat import ChatEngine
+
+    monkeypatch.setattr(leads_mod, "WEBHOOK_BACKOFF_SECONDS", 0.01)
+    server, calls = _webhook_server([400])
+    url = f"http://127.0.0.1:{server.server_port}/hook"
+    engine = ChatEngine(replace(settings, lead_webhook_url=url), model=spy)
+    sid = None
+    with caplog.at_level("ERROR", logger="app.leads"):
+        for m in (*BOOKING, "yes"):
+            sid, reply = engine.handle(sid, m)
+        assert _wait_for(lambda: "HTTP 400" in caplog.text)
+        time.sleep(0.1)  # room for a (wrong) retry to arrive
+    assert len(calls) == 1
+    assert len(rows(settings)) == 1  # the lead is still saved locally
+    server.shutdown()

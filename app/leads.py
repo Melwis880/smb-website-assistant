@@ -6,8 +6,11 @@ import csv
 import json
 import logging
 import os
+import random
 import re
 import threading
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -143,6 +146,9 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 _WEBHOOK_OPENER = urllib.request.build_opener(_NoRedirect)
+# n8n restarts and 502s are routine: retry network errors and 5xx, waiting ~1 s, then ~4 s.
+WEBHOOK_ATTEMPTS = 3
+WEBHOOK_BACKOFF_SECONDS = 1.0
 
 
 def _open_private(path: Path, mode: str):
@@ -174,17 +180,32 @@ class LeadStore:
             threading.Thread(target=self._notify, args=(lead,), daemon=True).start()
 
     def _notify(self, lead: Lead) -> None:
-        """Best-effort POST to an automation webhook (e.g. the n8n workflow in n8n/)."""
+        """Best-effort POST to an automation webhook (e.g. the n8n workflow in n8n/), with retries.
+
+        Runs in a background thread after the lead is saved, so nothing here reaches the visitor.
+        A retry can deliver a lead twice if the first response was lost: dedupe on session_id.
+        """
         headers = {"Content-Type": "application/json"}
         if self.webhook_secret:
             headers["X-Webhook-Secret"] = self.webhook_secret
-        try:
-            req = urllib.request.Request(
-                self.webhook_url, data=json.dumps(asdict(lead)).encode(), headers=headers, method="POST"
-            )
-            _WEBHOOK_OPENER.open(req, timeout=5).close()
-        except Exception as exc:  # the lead is already saved; never fail the chat on this
-            log.warning("Lead webhook failed: %s", exc)
+        body = json.dumps(asdict(lead)).encode()
+        error: object = None
+        for attempt in range(WEBHOOK_ATTEMPTS):
+            if attempt:
+                time.sleep(WEBHOOK_BACKOFF_SECONDS * 4 ** (attempt - 1) * (1 + random.random() / 2))
+            try:
+                req = urllib.request.Request(self.webhook_url, data=body, headers=headers, method="POST")
+                _WEBHOOK_OPENER.open(req, timeout=5).close()
+                return
+            except urllib.error.HTTPError as exc:
+                exc.close()
+                if exc.code < 500:  # a refused redirect or a 4xx: sending it again won't help
+                    log.error("Lead webhook rejected with HTTP %s; the lead is only in the CSV", exc.code)
+                    return
+                error = f"HTTP {exc.code}"
+            except Exception as exc:  # network errors; never let this thread raise
+                error = exc
+        log.error("Lead webhook failed after %d attempts (%s); the lead is only in the CSV", WEBHOOK_ATTEMPTS, error)
 
     def purge(self, older_than_days: int = RETENTION_DAYS, now: datetime | None = None) -> int:
         """Delete leads older than `older_than_days`. Returns how many rows were removed.
