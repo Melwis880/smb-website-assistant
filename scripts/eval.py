@@ -1,0 +1,101 @@
+"""Run the demo eval set through the full chat engine and print measured numbers.
+
+    python scripts/eval.py            # mock mode (no API key needed)
+    MOCK_LLM=0 ANTHROPIC_API_KEY=... python scripts/eval.py   # real model, reports tokens and cost
+
+All numbers are measured on the fictional demo data in data/ and eval/questions.json.
+"""
+
+from __future__ import annotations
+
+import json
+import statistics
+import sys
+import tempfile
+import time
+from dataclasses import replace
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from app.chat import ChatEngine  # noqa: E402
+from app.config import Settings  # noqa: E402
+from app.llm import ClaudeModel  # noqa: E402
+
+# USD per million tokens, Claude Haiku 4.5 list price (check current pricing before quoting).
+PRICE_IN, PRICE_OUT = 1.00, 5.00
+
+
+def main() -> int:
+    qs = json.loads((ROOT / "eval" / "questions.json").read_text())
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = replace(Settings.from_env(), leads_path=Path(tmp) / "leads.csv")
+        engine = ChatEngine(settings)
+        tokens_in = tokens_out = 0
+        if isinstance(engine.model, ClaudeModel):  # wrap to count usage
+            inner = engine.model.answer
+
+            def counting(*a, **kw):
+                nonlocal tokens_in, tokens_out
+                ans = inner(*a, **kw)
+                tokens_in += ans.input_tokens
+                tokens_out += ans.output_tokens
+                return ans
+
+            engine.model.answer = counting  # type: ignore[method-assign]
+
+        latencies: list[float] = []
+        failures: list[str] = []
+
+        def ask(q: str):
+            t = time.perf_counter()
+            _, reply = engine.handle(None, q)
+            latencies.append((time.perf_counter() - t) * 1000)
+            return reply
+
+        top1 = top3 = routed = 0
+        for q, title in qs["in_scope"]:
+            ranked = [h.chunk.title for h in engine._relevant(q)]
+            top1 += bool(ranked) and ranked[0] == title
+            top3 += title in ranked[:3]
+            reply = ask(q)
+            ok = reply.type == "answer"
+            routed += ok
+            if not ok or title not in ranked[:3]:
+                failures.append(f"in_scope: {q!r} -> {reply.type}, top3={ranked[:3]}")
+
+        def rate(group: str, expected: str) -> int:
+            n = 0
+            for q in qs[group]:
+                reply = ask(q)
+                n += reply.type == expected
+                if reply.type != expected:
+                    failures.append(f"{group}: {q!r} -> {reply.type}: {reply.reply[:80]}")
+            return n
+
+        oos = rate("out_of_scope", "fallback")
+        inj = rate("injection", "refusal")
+        book = rate("booking", "lead_question")
+
+    n_in = len(qs["in_scope"])
+    print(f"Model: {engine.model.name}  (DEMO DATA - fictional clinic)")
+    print(f"In-scope answered:         {routed}/{n_in}")
+    print(f"Retrieval top-1 correct:   {top1}/{n_in}")
+    print(f"Retrieval top-3 correct:   {top3}/{n_in}")
+    print(f"Out-of-scope -> handoff:   {oos}/{len(qs['out_of_scope'])}")
+    print(f"Injection -> refused:      {inj}/{len(qs['injection'])}")
+    print(f"Booking -> lead flow:      {book}/{len(qs['booking'])}")
+    print(f"Latency per turn (ms):     median {statistics.median(latencies):.1f}, max {max(latencies):.1f}")
+    if tokens_in:
+        calls = n_in
+        cost = tokens_in / 1e6 * PRICE_IN + tokens_out / 1e6 * PRICE_OUT
+        print(f"Tokens: {tokens_in} in / {tokens_out} out over ~{calls} model calls; cost ${cost:.4f}")
+    if failures:
+        print("\nMisses:")
+        print("\n".join(f"  - {f}" for f in failures))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

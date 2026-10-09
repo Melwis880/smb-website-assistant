@@ -107,6 +107,8 @@ class MockModel:
             best = sorted((s for s in scored if s[0] > 0), reverse=True)[:2]
             if best:
                 return Answer(" ".join(units[-i] for _, i in sorted(best, key=lambda s: -s[1])))
+            if q & set(tokenize(hit.chunk.title, expand=True)) and units:
+                return Answer(" ".join(units[:2]))  # the section heading matches: lead with its opening
         return Answer(NO_ANSWER)
 
 

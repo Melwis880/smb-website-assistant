@@ -63,8 +63,12 @@ TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9\-']*")
 
 
 def _stem(token: str) -> str:
-    """Very light stemming: enough to match 'fillings' with 'filling'."""
+    """Very light stemming: enough to match 'missed' with 'miss' and 'fillings' with 'filling'."""
     token = token.strip("'-")
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3]
+    if len(token) > 4 and token.endswith("ed") and not token.endswith("eed"):
+        return token[:-2]
     if len(token) > 4 and token.endswith("ies"):
         return token[:-3] + "y"
     if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
