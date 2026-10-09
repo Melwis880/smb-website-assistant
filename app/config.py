@@ -27,6 +27,7 @@ class Settings:
     lead_webhook_url: str | None = None
     allowed_origins: list[str] = field(default_factory=lambda: ["*"])
     min_retrieval_score: float = 2.0
+    min_query_coverage: float = 0.5
     max_message_chars: int = 1000
     max_output_tokens: int = 400
     business_name: str = "Brightsmile Dental"
@@ -49,4 +50,5 @@ class Settings:
             lead_webhook_url=os.getenv("LEAD_WEBHOOK_URL") or None,
             allowed_origins=origins or ["*"],
             min_retrieval_score=float(os.getenv("MIN_RETRIEVAL_SCORE", "2.0")),
+            min_query_coverage=float(os.getenv("MIN_QUERY_COVERAGE", "0.5")),
         )

@@ -75,6 +75,7 @@ def _stem(token: str) -> str:
 def tokenize(text: str, expand: bool = False) -> list[str]:
     out: list[str] = []
     for raw in TOKEN_RE.findall(text.lower()):
+        raw = re.sub(r"'(s|re|ve|ll|d|m|t)?$", "", raw)
         if raw in STOPWORDS:
             continue
         words = [raw] + (SYNONYMS.get(raw, []) if expand else [])
@@ -134,6 +135,18 @@ class Retriever:
     @classmethod
     def from_dir(cls, data_dir: Path) -> "Retriever":
         return cls(load_chunks(data_dir))
+
+    def coverage(self, query: str) -> float:
+        """Share of the query's content words (or their synonyms) that appear anywhere in our content.
+
+        BM25 alone happily matches "best pizza *place* in town" to "we *place* implants".
+        Requiring most of the question's words to be known filters such one-word coincidences.
+        """
+        words = tokenize(query)
+        if not words:
+            return 0.0
+        known = sum(1 for w in words if w in self.idf or any(t in self.idf for t in tokenize(w, expand=True)))
+        return known / len(words)
 
     def search(self, query: str, k: int = 3) -> list[Hit]:
         terms = set(tokenize(query, expand=True))

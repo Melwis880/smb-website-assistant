@@ -22,6 +22,7 @@ _PATTERNS = [
     r"\b(system|developer|hidden|initial)\s+(prompt|message|instructions?)\b",
     r"\byou\s+are\s+now\b",
     r"\b(act|behave|pretend|roleplay)\s+(as|like)\b",
+    r"\b(pretend|imagine)\s+(that\s+)?(you\s*(are|'re)|to\s+be)\b",
     r"\bnew\s+(instructions?|rules?|persona)\b",
     r"\b(jailbreak|dan\s+mode|developer\s+mode)\b",
     r"</?\s*(system|visitor_message|context|instructions?)\s*>",

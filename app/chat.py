@@ -125,13 +125,18 @@ class ChatEngine:
             return self._start_lead(sess)
         return self._answer(sess, text)
 
+    def _relevant(self, query: str):
+        if self.retriever.coverage(query) < self.s.min_query_coverage:
+            return []
+        return [h for h in self.retriever.search(query) if h.score >= self.s.min_retrieval_score]
+
     def _answer(self, sess: Session, text: str) -> Reply:
-        hits = [h for h in self.retriever.search(text) if h.score >= self.s.min_retrieval_score]
+        hits = self._relevant(text)
         if not hits:
             # Follow-up questions ("and for children?") borrow the previous question's topic.
             prev = next((t for r, t in reversed(sess.history) if r == "user"), None)
-            if prev and len(text.split()) <= 6:
-                hits = [h for h in self.retriever.search(f"{prev} {text}") if h.score >= self.s.min_retrieval_score]
+            if prev and len(text.split()) <= 6 and self.retriever.coverage(text) >= self.s.min_query_coverage:
+                hits = self._relevant(f"{prev} {text}")
         if not hits:
             return Reply(self._fallback(), "fallback")
         ans = self.model.answer(text, hits, sess.history)
