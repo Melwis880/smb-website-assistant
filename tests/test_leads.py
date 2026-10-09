@@ -127,3 +127,18 @@ def test_webhook_failure_does_not_lose_lead(settings, spy):
         sid, reply = engine.handle(sid, m)
     assert reply.type == "lead_saved"
     assert len(rows(settings)) == 1
+
+
+def test_storage_failure_gives_handoff_not_crash(settings, spy, tmp_path):
+    from dataclasses import replace
+
+    from app.chat import ChatEngine
+
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("")
+    engine = ChatEngine(replace(settings, leads_path=blocker / "leads.csv"), model=spy)
+    sid = None
+    for m in (*BOOKING, "yes"):
+        sid, reply = engine.handle(sid, m)
+    assert reply.type == "fallback"
+    assert "not saved" in reply.reply and "+00 123 456 789" in reply.reply

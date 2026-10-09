@@ -6,6 +6,7 @@ The model only ever writes answers to questions. Everything with business or leg
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import time
@@ -27,6 +28,8 @@ from .leads import (
 )
 from .llm import AnswerModel, ClaudeModel, MockModel
 from .retrieval import Retriever
+
+log = logging.getLogger(__name__)
 
 BOOKING_RE = re.compile(
     r"\b(book|booking|appointment|schedule|reserve|make an? (?:visit|appointment)|come in|see (?:a|the) dentist|"
@@ -128,7 +131,9 @@ class ChatEngine:
     def _relevant(self, query: str):
         if self.retriever.coverage(query) < self.s.min_query_coverage:
             return []
-        return [h for h in self.retriever.search(query) if h.score >= self.s.min_retrieval_score]
+        hits = [h for h in self.retriever.search(query) if h.score >= self.s.min_retrieval_score]
+        # Drop sections that score far below the best one: less noise for the model and the source list.
+        return [h for h in hits if h.score >= 0.4 * hits[0].score] if hits else []
 
     def _answer(self, sess: Session, text: str) -> Reply:
         hits = self._relevant(text)
@@ -196,7 +201,15 @@ class ChatEngine:
                 f"Understood, I have not saved your details. You can reach us at {self.s.handoff_contact}.",
                 "lead_cancelled",
             )
-        self.leads.save(Lead(session_id=sess.id, consent=True, **draft))
+        try:
+            self.leads.save(Lead(session_id=sess.id, consent=True, **draft))
+        except OSError as exc:
+            log.error("Could not save lead: %s", exc)
+            return Reply(
+                f"Sorry, something went wrong on our side and your request was not saved. "
+                f"Please contact us directly: {self.s.handoff_contact}.",
+                "fallback",
+            )
         return Reply(
             f"Thank you, {draft['name']}! Your request is with our front desk. They will contact you via "
             f"{draft['contact_type']} within one working day to confirm a time.",

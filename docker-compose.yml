@@ -1,0 +1,21 @@
+services:
+  assistant:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Mock mode by default so the demo runs without a key. Set MOCK_LLM=0 and
+      # ANTHROPIC_API_KEY in a .env file (never committed) to use Claude.
+      MOCK_LLM: ${MOCK_LLM:-1}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-haiku-4-5-20251001}
+      LEAD_WEBHOOK_URL: ${LEAD_WEBHOOK_URL:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+    volumes:
+      # Named volume: inherits the non-root user's ownership from the image (a host bind mount
+      # would be root-owned and the app could not write). Read leads with:
+      #   docker compose exec assistant cat /srv/var/leads.csv
+      - leads:/srv/var
+
+volumes:
+  leads:
