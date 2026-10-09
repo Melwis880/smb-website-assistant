@@ -201,3 +201,47 @@ def test_slow_webhook_does_not_delay_reply(settings, spy):
     assert time.perf_counter() - started < 1.0
     assert len(rows(settings)) == 1
     sink.close()
+
+
+def test_concurrent_yes_creates_exactly_one_lead(engine, settings, monkeypatch):
+    import threading
+    import time
+
+    import app.chat as chat_mod
+
+    sid = None
+    for m in BOOKING:
+        sid, _ = engine.handle(sid, m)
+
+    real_parse = chat_mod.parse_consent
+
+    def slow_parse(text):  # widen the race window: both requests are "inside" consent at once
+        time.sleep(0.2)
+        return real_parse(text)
+
+    monkeypatch.setattr(chat_mod, "parse_consent", slow_parse)
+    replies, errors = [], []
+
+    def confirm():
+        try:
+            replies.append(engine.handle(sid, "yes")[1])
+        except Exception as exc:  # a 500 in the API
+            errors.append(exc)
+
+    threads = [threading.Thread(target=confirm) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert [r.type for r in replies].count("lead_saved") == 1
+    assert len(rows(settings)) == 1
+
+
+def test_incomplete_draft_does_not_crash(engine, settings):
+    sid, _ = engine.handle(None, "I'd like to book an appointment")
+    sess = engine.sessions.get(sid)
+    sess.stage, sess.draft = "consent", {"name": "Anna Smith"}  # corrupted state
+    _, reply = engine.handle(sid, "yes")
+    assert reply.type == "lead_cancelled"
+    assert rows(settings) == []

@@ -38,6 +38,7 @@ BOOKING_RE = re.compile(
 )
 HUMAN_RE = re.compile(r"\b(human|real person|someone|staff|receptionist|speak to|talk to)\b", re.IGNORECASE)
 CANCEL_RE = re.compile(r"^\s*(cancel|stop|quit|never ?mind|forget it|exit)\b", re.IGNORECASE)
+REQUIRED_DRAFT_KEYS = {"name", "contact", "contact_type", "preferred_time"}
 # Questions *about* booking ("how do I book?", "can I book on Saturday?") are answered from content.
 BOOKING_QUESTION_RE = re.compile(r"^\s*(how|can|could|do|does|is|are|what|when|where|which)\b.*\?\s*$", re.IGNORECASE)
 
@@ -56,6 +57,8 @@ class Session:
     stage: str | None = None  # None | name | contact | time | consent
     draft: dict[str, str] = field(default_factory=dict)
     last_seen: float = field(default_factory=time.time)
+    # Serialises turns of one session: two concurrent "yes" must not both read the same draft.
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
 
 class SessionStore:
@@ -115,13 +118,14 @@ class ChatEngine:
         text = guard.clean_text(message, self.s.max_message_chars)
         if not text:
             return sess.id, Reply("Please type a question.", "fallback")
-        in_lead_flow = sess.stage is not None
-        reply = self._lead_step(sess, text) if sess.stage else self._route(sess, text)
-        # History is sent to the model for follow-up questions, so it only keeps question/answer
-        # turns: never booking-flow input (names, emails, phone numbers) and never refused text.
-        if not in_lead_flow and reply.type in ("answer", "fallback"):
-            sess.history += [("user", text), ("assistant", reply.reply)]
-            sess.history = sess.history[-12:]
+        with sess.lock:
+            in_lead_flow = sess.stage is not None
+            reply = self._lead_step(sess, text) if sess.stage else self._route(sess, text)
+            # History is sent to the model for follow-up questions, so it only keeps question/answer
+            # turns: never booking-flow input (names, emails, phone numbers) and never refused text.
+            if not in_lead_flow and reply.type in ("answer", "fallback"):
+                sess.history += [("user", text), ("assistant", reply.reply)]
+                sess.history = sess.history[-12:]
         return sess.id, reply
 
     def _route(self, sess: Session, text: str) -> Reply:
@@ -201,6 +205,14 @@ class ChatEngine:
         if decision is None:
             return Reply("Sorry, I need a clear yes or no. " + CONSENT_TEXT, "lead_question")
         draft, sess.stage, sess.draft = sess.draft, None, {}
+        if decision and not REQUIRED_DRAFT_KEYS <= draft.keys():
+            # Should not happen with the session lock, but never turn a broken state into a 500.
+            log.error("Consent given with an incomplete draft (keys: %s)", sorted(draft))
+            return Reply(
+                "Sorry, I lost track of your details and saved nothing. Type \"book\" to start again, "
+                f"or contact us at {self.s.handoff_contact}.",
+                "lead_cancelled",
+            )
         if not decision:
             return Reply(
                 f"Understood, I have not saved your details. You can reach us at {self.s.handoff_contact}.",
