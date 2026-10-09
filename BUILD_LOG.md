@@ -100,6 +100,10 @@ Other numbers:
 - Widget checked in headless Chromium: answer, handoff and refusal render; sending
   `<img src=x onerror=alert(1)>` renders as text (0 `<img>` elements injected, 0 page errors).
 
+- GitHub Actions, first run: pytest + eval on Python 3.11 and 3.12 (~25 s per job) and the
+  `docker compose up --build` smoke test on a clean runner (~20 s), all green. This confirmed the
+  Docker build issues above were specific to the sandbox.
+
 **Not measured:** real-model answer quality, latency and token cost. No `ANTHROPIC_API_KEY` was
 available in the build environment. `MOCK_LLM=0 ANTHROPIC_API_KEY=… python scripts/eval.py`
 prints tokens and cost when run with a key.
