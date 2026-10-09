@@ -111,7 +111,8 @@ All settings are environment variables (see `.env.example`). Secrets are never c
 | `LEADS_PER_IP_PER_DAY` | `3` | Saved booking requests per IP per rolling 24 h |
 | `LLM_DAILY_CALL_BUDGET` | `1000` | Claude calls per UTC day; when exhausted, questions get the human handoff (no API call) |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | uvicorn setting: your reverse proxy's IP, so limits see the visitor's IP |
-| `ALLOWED_ORIGINS` | `*` | CORS origins allowed to call the API (restrict in production) |
+| `ALLOWED_ORIGINS` | (empty) | Other sites allowed to call the API from the browser (CORS). Empty = same-origin only; `*` logs a warning |
+| `ENABLE_DOCS` | `0` | `1` serves `/docs`, `/redoc`, `/openapi.json` |
 | `MIN_RETRIEVAL_SCORE` | `2.0` | BM25 score below which a section is ignored |
 | `MIN_QUERY_COVERAGE` | `0.5` | Share of question words that must appear in the content |
 

@@ -62,6 +62,15 @@ class BodySizeLimit:
         await response(scope, receive, send)
 
 
+# Demo page: only our own script, styles inline (the page and the widget use <style>), API calls to self.
+PAGE_CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
+# Everything else (JSON, health check): nothing may load or frame it.
+DEFAULT_CSP = "default-src 'none'; frame-ancestors 'none'"
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     session_id: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]*$")
@@ -95,18 +104,42 @@ def create_app(settings: Settings | None = None, engine: ChatEngine | None = Non
         yield
         stop.set()
 
-    app = FastAPI(title=f"{settings.business_name} website assistant (demo)", lifespan=lifespan)
-    app.add_middleware(BodySizeLimit, max_bytes=settings.max_body_bytes)
-    app.add_middleware(
-        CORSMiddleware, allow_origins=settings.allowed_origins, allow_methods=["GET", "POST"], allow_headers=["Content-Type"]
+    docs = settings.enable_docs  # /docs, /redoc and /openapi.json only when ENABLE_DOCS=1
+    app = FastAPI(
+        title=f"{settings.business_name} website assistant (demo)",
+        lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
     )
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        if request.url.path == "/":
+            response.headers["Content-Security-Policy"] = PAGE_CSP
+        elif request.url.path != "/widget.js" and not (docs and request.url.path in ("/docs", "/redoc")):
+            # widget.js is a script for other sites; the docs pages load assets from a CDN
+            response.headers["Content-Security-Policy"] = DEFAULT_CSP
+        return response
+
+    app.add_middleware(BodySizeLimit, max_bytes=settings.max_body_bytes)
+    if settings.allowed_origins:  # otherwise same-origin only: no CORS headers at all
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.allowed_origins,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type"],
+        )
     app.state.engine = engine
     per_ip = SlidingWindowLimiter(settings.rate_limit_per_minute, 60)
     log.info("Starting with model=%s mock=%s chunks=%d", engine.model.name, settings.mock_llm, len(engine.retriever.chunks))
 
     @app.get("/healthz")
     def healthz() -> dict:
-        return {"status": "ok", "model": engine.model.name, "mock": settings.mock_llm}
+        return {"status": "ok"}  # no model name or mode: nothing for a scanner to fingerprint
 
     @app.post("/api/chat", response_model=ChatResponse, responses={429: {}, 413: {}})
     def chat(req: ChatRequest, request: Request):
