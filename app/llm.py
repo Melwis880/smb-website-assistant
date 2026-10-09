@@ -56,7 +56,11 @@ class ClaudeModel:
     def __init__(self, api_key: str, model: str, business: str, max_tokens: int = 400):
         import anthropic  # imported lazily so mock mode needs no network client
 
-        self.client = anthropic.Anthropic(api_key=api_key, timeout=20.0, max_retries=2)
+        # A 1-3 sentence answer that hasn't arrived in ~10 s won't arrive usefully, and the
+        # fallback (human handoff) is a fine outcome. Worst case: 2 attempts, ~21 s in total.
+        self.client = anthropic.Anthropic(
+            api_key=api_key, timeout=anthropic.Timeout(10.0, connect=3.0), max_retries=1
+        )
         self.name = model
         self.system = SYSTEM_PROMPT.format(business=business)
         self.max_tokens = max_tokens

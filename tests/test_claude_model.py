@@ -52,3 +52,10 @@ def test_api_errors_degrade_to_handoff():
 def test_no_answer_detection():
     assert make(FakeMessages(text="NO_ANSWER")).answer("q", HITS, []).is_no_answer
     assert make(FakeMessages(text="")).answer("q", HITS, []).is_no_answer
+
+
+def test_client_gives_up_quickly():
+    """Worst case ~21 s (2 attempts x 10 s), not ~60 s: a slow API must not hold a chat thread."""
+    client = ClaudeModel(api_key="test-key", model="m", business="b").client
+    assert client.max_retries == 1
+    assert client.timeout.read == 10.0 and client.timeout.connect == 3.0

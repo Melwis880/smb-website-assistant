@@ -123,8 +123,12 @@
     add(text, "user", null, awaitingDetails ? MASK : undefined);
     var pending = render("…", "bot");
     send.disabled = true;
+    // Give up after 25 s (the server itself stops waiting for Claude after ~21 s).
+    var ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    var timer = ctrl && setTimeout(function () { ctrl.abort(); }, 25000);
     fetch(API + "/api/chat", {
       method: "POST",
+      signal: ctrl ? ctrl.signal : undefined,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: text, session_id: sessionId })
     })
@@ -151,6 +155,6 @@
         if (pending.parentNode) log.removeChild(pending);
         add((err && err.detail) || "Sorry, something went wrong. Please call us or try again.", "bot");
       })
-      .then(function () { send.disabled = false; input.focus(); });
+      .then(function () { clearTimeout(timer); send.disabled = false; input.focus(); });
   });
 })();
