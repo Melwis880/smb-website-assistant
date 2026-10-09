@@ -175,7 +175,10 @@ def create_app(settings: Settings | None = None, engine: ChatEngine | None = Non
 
     @app.get("/widget.js")
     def widget() -> FileResponse:
-        return FileResponse(WEB_DIR / "widget.js", media_type="application/javascript")
+        # Loaded on every page of the embedding site: let browsers reuse it for an hour.
+        return FileResponse(
+            WEB_DIR / "widget.js", media_type="application/javascript", headers={"Cache-Control": "public, max-age=3600"}
+        )
 
     return app
 

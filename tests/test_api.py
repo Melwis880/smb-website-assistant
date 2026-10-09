@@ -14,6 +14,7 @@ def test_health_and_static_files(settings, spy):
     assert "Brightsmile Dental" in c.get("/").text
     r = c.get("/widget.js")
     assert r.status_code == 200 and "javascript" in r.headers["content-type"]
+    assert r.headers["Cache-Control"] == "public, max-age=3600"  # embedded on every page of the client site
 
 
 def test_chat_round_trip_keeps_session(settings, spy):
