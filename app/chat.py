@@ -42,6 +42,9 @@ CANCEL_RE = re.compile(r"^\s*(cancel|stop|quit|never ?mind|forget it|exit)\b", r
 REQUIRED_DRAFT_KEYS = {"name", "contact", "contact_type", "preferred_time"}
 # Questions *about* booking ("how do I book?", "can I book on Saturday?") are answered from content.
 BOOKING_QUESTION_RE = re.compile(r"^\s*(how|can|could|do|does|is|are|what|when|where|which)\b.*\?\s*$", re.IGNORECASE)
+HISTORY_TURNS = 6  # what ClaudeModel sends; older turns would be memory nobody reads
+# Stored instead of a fallback's canned handoff text, which would only cost tokens on the next call.
+FALLBACK_NOTE = "(No answer from our content; offered the front desk.)"
 
 
 @dataclass
@@ -134,8 +137,9 @@ class ChatEngine:
             # History is sent to the model for follow-up questions, so it only keeps question/answer
             # turns: never booking-flow input (names, emails, phone numbers) and never refused text.
             if not in_lead_flow and reply.type in ("answer", "fallback"):
-                sess.history += [("user", text), ("assistant", reply.reply)]
-                sess.history = sess.history[-12:]
+                said = reply.reply if reply.type == "answer" else FALLBACK_NOTE
+                sess.history += [("user", text), ("assistant", said)]
+                sess.history = sess.history[-HISTORY_TURNS:]
         return sess.id, reply
 
     def _route(self, sess: Session, text: str, client_ip: str = "unknown") -> Reply:

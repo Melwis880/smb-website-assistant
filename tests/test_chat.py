@@ -92,3 +92,15 @@ def test_expired_sessions_are_dropped():
     new = store.get(None)
     assert old.id not in store._data and new.id in store._data
     assert store.get(old.id).id != old.id  # an expired id starts a fresh session
+
+
+def test_history_is_short_and_skips_canned_fallback_text(chat, spy, engine):
+    from app.chat import FALLBACK_NOTE, HISTORY_TURNS
+
+    chat("What is the capital of France?")  # fallback: no model call
+    for _ in range(4):
+        chat("Are you open on Saturday?")
+    sent = spy.histories[0]
+    assert sent[-1] == ("assistant", FALLBACK_NOTE)  # not the long handoff text
+    assert all(len(h) <= HISTORY_TURNS for h in spy.histories)
+    assert all(len(s.history) <= HISTORY_TURNS for s in engine.sessions._data.values())
