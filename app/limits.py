@@ -34,8 +34,11 @@ class SlidingWindowLimiter:
         """Would one more event be allowed? Does not record anything."""
         if self.limit <= 0:
             return True
+        now = time.time() if now is None else now
         with self._lock:
-            return len(self._recent(key, time.time() if now is None else now)) < self.limit
+            # Read only: a key that is merely checked must not take an LRU slot from a real one.
+            events = self._events.get(key)
+            return events is None or sum(1 for t in events if now - t < self.window) < self.limit
 
     def hit(self, key: str, now: float | None = None) -> bool:
         """Record an event if allowed. Returns False (and records nothing) when over the limit."""

@@ -127,10 +127,11 @@ class ChatEngine:
 
     # --- main entry point -------------------------------------------------------------------
     def handle(self, session_id: str | None, message: str, client_ip: str = "unknown") -> tuple[str, Reply]:
-        sess = self.sessions.get(session_id)
         text = guard.clean_text(message, self.s.max_message_chars)
         if not text:
-            return sess.id, Reply("Please type a question.", "fallback")
+            # Nothing to answer: don't create a session for it (and evict someone else's).
+            return session_id or "", Reply("Please type a question.", "fallback")
+        sess = self.sessions.get(session_id)
         with sess.lock:
             in_lead_flow = sess.stage is not None
             reply = self._lead_step(sess, text, client_ip) if sess.stage else self._route(sess, text, client_ip)

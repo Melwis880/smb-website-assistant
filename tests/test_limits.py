@@ -113,3 +113,12 @@ def test_llm_budget_switches_to_fallback(settings, spy):
     assert len(spy.calls) == 2
     # questions that never needed the model still work as before
     assert engine.handle(None, "What is the capital of France?")[1].type == "fallback"
+
+
+def test_allowed_does_not_create_keys():
+    lim = SlidingWindowLimiter(limit=1, window_seconds=60, max_keys=10)
+    lim.hit("real", now=0)
+    for i in range(100):
+        assert lim.allowed(f"probe{i}", now=1)
+    assert list(lim._events) == ["real"]  # the recorded key was not evicted by mere checks
+    assert not lim.allowed("real", now=59) and lim.allowed("real", now=60)

@@ -104,3 +104,9 @@ def test_history_is_short_and_skips_canned_fallback_text(chat, spy, engine):
     assert sent[-1] == ("assistant", FALLBACK_NOTE)  # not the long handoff text
     assert all(len(h) <= HISTORY_TURNS for h in spy.histories)
     assert all(len(s.history) <= HISTORY_TURNS for s in engine.sessions._data.values())
+
+
+def test_empty_message_creates_no_session(engine):
+    sid, reply = engine.handle(None, " \u0000 ")
+    assert reply.type == "fallback" and sid == ""
+    assert len(engine.sessions._data) == 0
