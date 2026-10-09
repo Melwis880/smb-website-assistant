@@ -10,13 +10,19 @@
   var TITLE = (script && script.getAttribute("data-title")) || "Ask Brightsmile Dental";
   var STORE_KEY = "bsd-chat-session";
   var LOG_KEY = "bsd-chat-log";
+  var DETAILS_KEY = "bsd-chat-awaiting-details";
+  var MASK = "[details hidden]";
   var sessionId = null;
   var transcript = [];
+  // True while the bot is asking for booking details (name, contact, time, consent).
+  // What the visitor types then is shown on screen but never written to sessionStorage.
+  var awaitingDetails = false;
   // Restore both the session and the visible transcript, so a booking flow started on one page
   // is still on screen on the next page (the server keeps the flow state per session).
   try {
     sessionId = sessionStorage.getItem(STORE_KEY);
     transcript = JSON.parse(sessionStorage.getItem(LOG_KEY) || "[]");
+    awaitingDetails = sessionStorage.getItem(DETAILS_KEY) === "1";
     if (!Array.isArray(transcript)) transcript = [];
   } catch (e) { transcript = []; }
 
@@ -86,8 +92,8 @@
     return m;
   }
 
-  function add(text, who, sources) {
-    transcript.push({ text: String(text), who: who, sources: sources || null });
+  function add(text, who, sources, storedText) {
+    transcript.push({ text: String(storedText === undefined ? text : storedText), who: who, sources: sources || null });
     transcript = transcript.slice(-50);
     try { sessionStorage.setItem(LOG_KEY, JSON.stringify(transcript)); } catch (e) {}
     return render(text, who, sources);
@@ -114,7 +120,7 @@
     var text = input.value.trim();
     if (!text) return;
     input.value = "";
-    add(text, "user");
+    add(text, "user", null, awaitingDetails ? MASK : undefined);
     var pending = render("…", "bot");
     send.disabled = true;
     fetch(API + "/api/chat", {
@@ -133,7 +139,11 @@
       })
       .then(function (data) {
         sessionId = data.session_id;
-        try { sessionStorage.setItem(STORE_KEY, sessionId); } catch (e) {}
+        awaitingDetails = data.type === "lead_question";
+        try {
+          sessionStorage.setItem(STORE_KEY, sessionId);
+          sessionStorage.setItem(DETAILS_KEY, awaitingDetails ? "1" : "0");
+        } catch (e) {}
         log.removeChild(pending);
         add(data.reply, "bot", data.type === "answer" ? data.sources : null);
       })

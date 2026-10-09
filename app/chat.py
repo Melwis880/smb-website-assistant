@@ -247,7 +247,8 @@ class ChatEngine:
                 "fallback",
             )
         return Reply(
-            f"Thank you, {draft['name']}! Your request is with our front desk. They will contact you via "
+            # No personal data echoed back: the widget stores replies in sessionStorage.
+            "Thank you! Your request is with our front desk. They will contact you via "
             f"{draft['contact_type']} within one working day to confirm a time.",
             "lead_saved",
         )

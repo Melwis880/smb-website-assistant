@@ -395,3 +395,9 @@ def test_webhook_does_not_follow_redirects(settings, spy):
     redirector.server_close()
     assert hits == {"redirector": 1, "target": 0}, f"redirect followed, secret sent: {leaked}"
     assert len(rows(settings)) == 1  # the lead is still saved locally
+
+
+def test_replies_never_echo_booking_details(chat):
+    replies = [chat(m).reply for m in (*BOOKING, "yes")]
+    for detail in ("Anna Smith", "anna@example.com"):  # ("Tuesday morning" is also the bot's own example)
+        assert not any(detail in r for r in replies)
