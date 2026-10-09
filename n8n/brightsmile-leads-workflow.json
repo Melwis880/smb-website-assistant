@@ -1,0 +1,196 @@
+{
+  "id": "BrightsmileLead1",
+  "name": "Brightsmile Dental - forward new website leads",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "brightsmile-lead",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "6f0f6a52-1d1e-4a39-9a63-2a0b7a1c0001",
+      "name": "New lead (webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "brightsmile-lead",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "Brightsmile webhook secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a0",
+              "name": "created_at",
+              "value": "={{ $json.body.created_at }}",
+              "type": "string"
+            },
+            {
+              "id": "a1",
+              "name": "name",
+              "value": "={{ $json.body.name }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "contact",
+              "value": "={{ $json.body.contact }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "contact_type",
+              "value": "={{ $json.body.contact_type }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "preferred_time",
+              "value": "={{ $json.body.preferred_time }}",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "consent",
+              "value": "={{ $json.body.consent }}",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "consent_text_version",
+              "value": "={{ $json.body.consent_text_version }}",
+              "type": "string"
+            },
+            {
+              "id": "a7",
+              "name": "session_id",
+              "value": "={{ $json.body.session_id }}",
+              "type": "string"
+            },
+            {
+              "id": "a8",
+              "name": "source",
+              "value": "={{ $json.body.source }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f0f6a52-1d1e-4a39-9a63-2a0b7a1c0002",
+      "name": "Pick lead fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "6f0f6a52-1d1e-4a39-9a63-2a0b7a1c0003",
+      "name": "Append to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        480,
+        -100
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "assistant@brightsmile.example",
+        "toEmail": "frontdesk@brightsmile.example",
+        "subject": "New booking request from the website",
+        "emailFormat": "text",
+        "text": "=A new booking request arrived from the website assistant (DEMO) at {{ $json.created_at }}.\n\nOpen the Leads sheet to see the details and confirm within one working day.\n\n(This email deliberately contains no personal data: the sheet row is deleted automatically after 90 days, an email copy would not be.)",
+        "options": {}
+      },
+      "id": "6f0f6a52-1d1e-4a39-9a63-2a0b7a1c0004",
+      "name": "Email front desk",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        100
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_ME",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "New lead (webhook)": {
+      "main": [
+        [
+          {
+            "node": "Pick lead fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick lead fields": {
+      "main": [
+        [
+          {
+            "node": "Append to Google Sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email front desk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false
+}

@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+!.env.example
+__pycache__
+.pytest_cache
+tests
+eval
+var
+leads.csv
+*.md
+!data/*.md

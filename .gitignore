@@ -27,3 +27,4 @@ leads.csv
 .DS_Store
 .vscode/
 .idea/
+var/
