@@ -149,6 +149,37 @@ I checked that it fails on the old code.
 - **Real-credential test of the n8n workflows.** Both import cleanly; running them needs a Google
   account and SMTP server.
 
+## Optimization pass
+
+An optimization audit (`OPTIMIZATIONS.md`) found no CPU or algorithm problems: a turn costs under
+1 ms locally. The risks were in how the app behaves when Claude is slow, and in hostile input.
+Nine findings were applied, one commit each, and five were deferred with reasons. All numbers
+below are **demo data, mock mode**, measured before and after with the same script:
+
+| What | Before | After |
+|---|---|---|
+| `/healthz` while 45 chats hang on a 3 s model | 2.80 s | 0.00–0.01 s |
+| `clean_text` on 4,000 × U+FDFA (best of 5) | 32.9 ms | 7.4 ms |
+| All 45 hanging chats finished | 6.1 s | 9.1 s (the price of capping chats at 20 threads) |
+| Worst-case wait for Claude per turn | ≈60–70 s | ≈21 s (configured; not measured against the real API) |
+| `eval.py` quality metrics | baseline | identical, same misses |
+| Tests | 149 | 158 |
+
+- **Problem:** every endpoint was a plain `def`, so they all shared AnyIO's 40 threads. A slow
+  Claude API would have taken the health check down with it. A test that hangs 45 chats now
+  guards this: it failed on the old code and passes on the new one.
+- **Problem:** `unicodedata.normalize("NFKC", …)` ran before the 1,000-character cut. One
+  Arabic ligature (U+FDFA) becomes 18 characters, so a 4,000-character message became 72,000
+  characters of work that was thrown away.
+- **Decision:** a `ThreadPoolExecutor` for chats, not `anyio.CapacityLimiter`. The limiter binds
+  to one event loop, and the test client starts a new loop per request. *Rejected:* rewriting the
+  engine on `AsyncAnthropic`, which is a large change for traffic an SME widget never sees.
+- **Decision:** prompt caching was *not* added. The system prompt is about 300 tokens, and
+  Haiku 4.5 only caches prefixes of 4,096 tokens or more, so the marker would silently do nothing.
+- **Measurement fix:** `eval.py` printed "~30 model calls" by assumption. Counting them gives 27.
+- Post hook: "My chatbot's health check depended on Anthropic's latency. No Claude code was
+  involved: the health endpoint and the chat endpoint queued for the same 40 threads."
+
 ## Measured numbers (demo data)
 
 `python scripts/eval.py`, mock mode, 52 questions in `eval/questions.json`. Caveat: I wrote the
@@ -180,7 +211,7 @@ Lowering coverage to 0.34 answers one more in-scope question on this set; I kept
 handoff costs less than a wrong answer.
 
 Other numbers:
-- Test suite: 83 tests at first PR, 92 after the code review, 149 after the security audit; ~4 s,
+- Test suite: 83 tests at first PR, 92 after the code review, 149 after the security audit, 158 after the optimization pass; ~5 s,
   no network (mock mode).
 - Prompt size sent to Claude for the 26 answerable eval questions: mean ~1,540 characters
   (≈ 380 tokens by the 4-characters-per-token rule, an **estimate**), max ≈ 540 tokens.

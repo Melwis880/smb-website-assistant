@@ -83,7 +83,7 @@ MOCK_LLM=1 uvicorn app.main:app --reload          # or: export ANTHROPIC_API_KEY
 ### Tests and eval
 ```bash
 pip install -r requirements-dev.txt
-pytest -q                     # 149 tests, mock mode, no network
+pytest -q                     # 158 tests, mock mode, no network
 python scripts/eval.py        # routing/retrieval numbers on the demo eval set
 ```
 

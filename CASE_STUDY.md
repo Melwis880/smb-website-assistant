@@ -51,7 +51,7 @@ set was written by the builder after the retriever, so it is a smoke test, not a
 - 8 of 8 prompt-injection attempts refused before reaching the model; 10 more in the test suite.
 - 4 of 4 booking phrasings started the lead flow; no lead is ever stored without an explicit "yes"
   (enforced by tests).
-- 149 automated tests pass in CI without an API key.
+- 158 automated tests pass in CI without an API key.
 
 **Before / after**
 
