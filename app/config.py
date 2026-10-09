@@ -25,6 +25,7 @@ class Settings:
     data_dir: Path = ROOT / "data"
     leads_path: Path = ROOT / "leads.csv"
     lead_webhook_url: str | None = None
+    lead_webhook_secret: str | None = None
     allowed_origins: list[str] = field(default_factory=lambda: ["*"])
     min_retrieval_score: float = 2.0
     min_query_coverage: float = 0.5
@@ -48,6 +49,7 @@ class Settings:
             data_dir=Path(os.getenv("DATA_DIR", ROOT / "data")),
             leads_path=Path(os.getenv("LEADS_PATH", ROOT / "leads.csv")),
             lead_webhook_url=os.getenv("LEAD_WEBHOOK_URL") or None,
+            lead_webhook_secret=os.getenv("LEAD_WEBHOOK_SECRET") or None,
             allowed_origins=origins or ["*"],
             min_retrieval_score=float(os.getenv("MIN_RETRIEVAL_SCORE", "2.0")),
             min_query_coverage=float(os.getenv("MIN_QUERY_COVERAGE", "0.5")),

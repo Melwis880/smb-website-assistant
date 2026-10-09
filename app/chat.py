@@ -91,7 +91,7 @@ class ChatEngine:
             if settings.mock_llm
             else ClaudeModel(settings.api_key or "", settings.model, settings.business_name, settings.max_output_tokens)
         )
-        self.leads = LeadStore(settings.leads_path, settings.lead_webhook_url)
+        self.leads = LeadStore(settings.leads_path, settings.lead_webhook_url, settings.lead_webhook_secret)
         self.sessions = SessionStore()
 
     # --- canned texts -------------------------------------------------------------------

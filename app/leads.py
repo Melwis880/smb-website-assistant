@@ -102,9 +102,10 @@ FIELDS = list(Lead.__dataclass_fields__)
 
 
 class LeadStore:
-    def __init__(self, path: Path, webhook_url: str | None = None):
+    def __init__(self, path: Path, webhook_url: str | None = None, webhook_secret: str | None = None):
         self.path = path
         self.webhook_url = webhook_url
+        self.webhook_secret = webhook_secret
         self._lock = threading.Lock()
 
     def save(self, lead: Lead) -> None:
@@ -123,12 +124,12 @@ class LeadStore:
         """Best-effort POST to an automation webhook (e.g. the n8n workflow in n8n/)."""
         if not self.webhook_url:
             return
+        headers = {"Content-Type": "application/json"}
+        if self.webhook_secret:
+            headers["X-Webhook-Secret"] = self.webhook_secret
         try:
             req = urllib.request.Request(
-                self.webhook_url,
-                data=json.dumps(asdict(lead)).encode(),
-                headers={"Content-Type": "application/json"},
-                method="POST",
+                self.webhook_url, data=json.dumps(asdict(lead)).encode(), headers=headers, method="POST"
             )
             urllib.request.urlopen(req, timeout=5).close()
         except Exception as exc:  # the lead is already saved; never fail the chat on this

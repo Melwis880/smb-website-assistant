@@ -142,3 +142,36 @@ def test_storage_failure_gives_handoff_not_crash(settings, spy, tmp_path):
         sid, reply = engine.handle(sid, m)
     assert reply.type == "fallback"
     assert "not saved" in reply.reply and "+00 123 456 789" in reply.reply
+
+
+def test_webhook_receives_lead_json_with_secret(settings, spy):
+    import json
+    import threading
+    from dataclasses import replace
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from app.chat import ChatEngine
+
+    received = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            received["secret"] = self.headers.get("X-Webhook-Secret")
+            received["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_port}/webhook/brightsmile-lead"
+    engine = ChatEngine(replace(settings, lead_webhook_url=url, lead_webhook_secret="s3cret"), model=spy)
+    sid = None
+    for m in (*BOOKING, "yes"):
+        sid, reply = engine.handle(sid, m)
+    server.server_close()
+    assert reply.type == "lead_saved"
+    assert received["secret"] == "s3cret"
+    assert received["body"]["name"] == "Anna Smith" and received["body"]["consent"] is True
