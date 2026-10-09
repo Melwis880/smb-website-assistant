@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import re
 import threading
 import urllib.request
@@ -101,6 +102,13 @@ class Lead:
 FIELDS = list(Lead.__dataclass_fields__)
 
 
+def _open_private(path: Path, mode: str):
+    """Open for writing; a newly created file gets 0600 (owner read/write only), whatever the umask."""
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == "a" else os.O_TRUNC)
+    fd = os.open(path, flags, 0o600)
+    return os.fdopen(fd, mode, newline="", encoding="utf-8")
+
+
 class LeadStore:
     def __init__(self, path: Path, webhook_url: str | None = None, webhook_secret: str | None = None):
         self.path = path
@@ -113,7 +121,7 @@ class LeadStore:
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             new_file = not self.path.exists() or self.path.stat().st_size == 0
-            with self.path.open("a", newline="", encoding="utf-8") as f:
+            with _open_private(self.path, "a") as f:
                 writer = csv.DictWriter(f, fieldnames=FIELDS)
                 if new_file:
                     writer.writeheader()

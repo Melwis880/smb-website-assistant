@@ -245,3 +245,10 @@ def test_incomplete_draft_does_not_crash(engine, settings):
     _, reply = engine.handle(sid, "yes")
     assert reply.type == "lead_cancelled"
     assert rows(settings) == []
+
+
+def test_leads_file_is_private(chat, settings):
+    import stat
+
+    chat(*BOOKING, "yes")
+    assert stat.S_IMODE(settings.leads_path.stat().st_mode) == 0o600
