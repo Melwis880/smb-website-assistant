@@ -118,12 +118,12 @@ class LeadStore:
                 if new_file:
                     writer.writeheader()
                 writer.writerow(row)
-        self._notify(lead)
+        if self.webhook_url:
+            # In the background: a slow or down n8n must not delay the visitor's reply.
+            threading.Thread(target=self._notify, args=(lead,), daemon=True).start()
 
     def _notify(self, lead: Lead) -> None:
         """Best-effort POST to an automation webhook (e.g. the n8n workflow in n8n/)."""
-        if not self.webhook_url:
-            return
         headers = {"Content-Type": "application/json"}
         if self.webhook_secret:
             headers["X-Webhook-Secret"] = self.webhook_secret

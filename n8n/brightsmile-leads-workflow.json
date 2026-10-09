@@ -113,10 +113,11 @@
         "columns": {
           "mappingMode": "autoMapInputData",
           "value": {},
-          "matchingColumns": [],
           "schema": []
         },
-        "options": {}
+        "options": {
+          "cellFormat": "RAW"
+        }
       },
       "id": "6f0f6a52-1d1e-4a39-9a63-2a0b7a1c0003",
       "name": "Append to Google Sheet",

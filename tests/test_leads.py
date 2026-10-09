@@ -153,6 +153,7 @@ def test_webhook_receives_lead_json_with_secret(settings, spy):
     from app.chat import ChatEngine
 
     received = {}
+    done = threading.Event()
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
@@ -160,6 +161,7 @@ def test_webhook_receives_lead_json_with_secret(settings, spy):
             received["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             self.send_response(200)
             self.end_headers()
+            done.set()
 
         def log_message(self, *args):
             pass
@@ -171,7 +173,31 @@ def test_webhook_receives_lead_json_with_secret(settings, spy):
     sid = None
     for m in (*BOOKING, "yes"):
         sid, reply = engine.handle(sid, m)
-    server.server_close()
     assert reply.type == "lead_saved"
+    assert done.wait(5), "webhook was not called"  # sent from a background thread
+    server.server_close()
     assert received["secret"] == "s3cret"
     assert received["body"]["name"] == "Anna Smith" and received["body"]["consent"] is True
+
+
+def test_slow_webhook_does_not_delay_reply(settings, spy):
+    import socket
+    import time
+    from dataclasses import replace
+
+    from app.chat import ChatEngine
+
+    sink = socket.socket()
+    sink.bind(("127.0.0.1", 0))
+    sink.listen(1)  # accepts the connection but never answers
+    url = f"http://127.0.0.1:{sink.getsockname()[1]}/hook"
+    engine = ChatEngine(replace(settings, lead_webhook_url=url), model=spy)
+    sid = None
+    for m in BOOKING:
+        sid, _ = engine.handle(sid, m)
+    started = time.perf_counter()
+    _, reply = engine.handle(sid, "yes")
+    assert reply.type == "lead_saved"
+    assert time.perf_counter() - started < 1.0
+    assert len(rows(settings)) == 1
+    sink.close()

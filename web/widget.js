@@ -9,8 +9,16 @@
   var API = ((script && script.getAttribute("data-api")) || "").replace(/\/$/, "");
   var TITLE = (script && script.getAttribute("data-title")) || "Ask Brightsmile Dental";
   var STORE_KEY = "bsd-chat-session";
+  var LOG_KEY = "bsd-chat-log";
   var sessionId = null;
-  try { sessionId = sessionStorage.getItem(STORE_KEY); } catch (e) {}
+  var transcript = [];
+  // Restore both the session and the visible transcript, so a booking flow started on one page
+  // is still on screen on the next page (the server keeps the flow state per session).
+  try {
+    sessionId = sessionStorage.getItem(STORE_KEY);
+    transcript = JSON.parse(sessionStorage.getItem(LOG_KEY) || "[]");
+    if (!Array.isArray(transcript)) transcript = [];
+  } catch (e) { transcript = []; }
 
   var css =
     ".bsd-btn{position:fixed;right:20px;bottom:20px;z-index:2147483000;border:0;border-radius:28px;padding:14px 20px;" +
@@ -70,13 +78,24 @@
   document.body.appendChild(btn);
   document.body.appendChild(panel);
 
-  function add(text, who, sources) {
+  function render(text, who, sources) {
     var m = el("div", "bsd-msg " + (who === "user" ? "bsd-user" : "bsd-bot"), text);
     if (sources && sources.length) m.appendChild(el("div", "bsd-src", "Source: " + sources.join("; ")));
     log.appendChild(m);
     log.scrollTop = log.scrollHeight;
     return m;
   }
+
+  function add(text, who, sources) {
+    transcript.push({ text: String(text), who: who, sources: sources || null });
+    transcript = transcript.slice(-50);
+    try { sessionStorage.setItem(LOG_KEY, JSON.stringify(transcript)); } catch (e) {}
+    return render(text, who, sources);
+  }
+
+  transcript.forEach(function (h) {
+    if (h && typeof h.text === "string") render(h.text, h.who, Array.isArray(h.sources) ? h.sources : null);
+  });
 
   function toggle(open) {
     panel.classList.toggle("open", open);
@@ -96,7 +115,7 @@
     if (!text) return;
     input.value = "";
     add(text, "user");
-    var pending = add("…", "bot");
+    var pending = render("…", "bot");
     send.disabled = true;
     fetch(API + "/api/chat", {
       method: "POST",
@@ -111,7 +130,8 @@
         add(data.reply, "bot", data.type === "answer" ? data.sources : null);
       })
       .catch(function () {
-        pending.textContent = "Sorry, something went wrong. Please call us or try again.";
+        if (pending.parentNode) log.removeChild(pending);
+        add("Sorry, something went wrong. Please call us or try again.", "bot");
       })
       .then(function () { send.disabled = false; input.focus(); });
   });

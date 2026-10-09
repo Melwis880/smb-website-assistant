@@ -12,6 +12,8 @@ services:
       LEAD_WEBHOOK_URL: ${LEAD_WEBHOOK_URL:-}
       LEAD_WEBHOOK_SECRET: ${LEAD_WEBHOOK_SECRET:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      MIN_RETRIEVAL_SCORE: ${MIN_RETRIEVAL_SCORE:-2.0}
+      MIN_QUERY_COVERAGE: ${MIN_QUERY_COVERAGE:-0.5}
     volumes:
       # Named volume: inherits the non-root user's ownership from the image (a host bind mount
       # would be root-owned and the app could not write). Read leads with:
