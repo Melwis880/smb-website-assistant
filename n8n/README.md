@@ -1,8 +1,16 @@
-# n8n workflow: forward new leads to Google Sheets and email
+# n8n workflows: forward new leads, delete them after 90 days
 
 `brightsmile-leads-workflow.json` receives each consented lead from the assistant and:
-1. appends it as a row to a Google Sheet (tab `Leads`), and
-2. emails the front desk.
+1. appends it as a row to a Google Sheet (tab `Leads`, written as RAW values), and
+2. emails the front desk a notice **without personal data** ("new request, see the sheet").
+
+`brightsmile-leads-cleanup-workflow.json` runs daily at 03:00 and deletes Sheet rows whose
+`created_at` is older than 90 days, the same rule the app applies to `leads.csv`.
+
+Visitors are told "we automatically delete this request after 90 days" (consent text `v2`).
+That holds only if **both** workflows are active: the app purges its CSV, the cleanup workflow
+purges the Sheet, and the email never contained the data. If you don't run the cleanup
+workflow, you must delete old Sheet rows by hand.
 
 ```
 Webhook (POST, header auth) → Pick lead fields → Append to Google Sheet
@@ -10,8 +18,8 @@ Webhook (POST, header auth) → Pick lead fields → Append to Google Sheet
 ```
 
 ## Import
-1. In n8n: **Workflows → Import from File** and pick `brightsmile-leads-workflow.json`
-   (or CLI: `n8n import:workflow --input=brightsmile-leads-workflow.json`).
+1. In n8n: **Workflows → Import from File** and pick both JSON files
+   (or CLI: `n8n import:workflow --input=<file>.json`).
 2. Create three credentials and select them on the nodes (exports never contain credentials;
    the `REPLACE_ME` ids are placeholders):
    - **Header Auth** on the webhook node: name `X-Webhook-Secret`, value = a long random string.
@@ -19,8 +27,9 @@ Webhook (POST, header auth) → Pick lead fields → Append to Google Sheet
      and add a header row: `created_at, name, contact, contact_type, preferred_time, consent,
      consent_text_version, session_id, source`.
    - **SMTP** on the email node; change the from/to addresses.
-3. Activate the workflow and copy the **production** webhook URL.
-4. Configure the assistant:
+3. In the cleanup workflow, select the same Google Sheets credential and sheet URL.
+4. Activate both workflows and copy the **production** webhook URL.
+5. Configure the assistant:
    ```
    LEAD_WEBHOOK_URL=https://your-n8n.example.com/webhook/brightsmile-lead
    LEAD_WEBHOOK_SECRET=<same random string as the Header Auth credential>
@@ -30,8 +39,11 @@ The assistant always writes `leads.csv` first; the webhook is best-effort, so an
 loses a lead (it is logged as a warning).
 
 ## What was verified
-- The JSON imports cleanly with the n8n CLI (`import:workflow`, n8n 2.42.6) and exports back
-  with all 4 nodes and connections.
+- Both JSON files import cleanly with the n8n CLI (`import:workflow`, n8n 2.42.6).
+- The cleanup workflow's row-selection code was run with Node against sample rows (old, recent,
+  unparseable dates): it returns only the expired rows, highest row number first. Node
+  parameter names (`read`, `delete`, `row_number`, `cellFormat`) were checked in the n8n node source.
 - The assistant's webhook call (JSON body + `X-Webhook-Secret` header) is covered by a pytest
   test against a local HTTP server.
-- **Not verified end-to-end:** sending to a real Google Sheet / SMTP server (needs real credentials).
+- **Not verified end-to-end:** running either workflow against a real Google Sheet / SMTP server
+  (needs real credentials).

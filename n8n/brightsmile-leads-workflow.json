@@ -138,9 +138,9 @@
       "parameters": {
         "fromEmail": "assistant@brightsmile.example",
         "toEmail": "frontdesk@brightsmile.example",
-        "subject": "=New booking request: {{ $json.name }}",
+        "subject": "New booking request from the website",
         "emailFormat": "text",
-        "text": "=New booking request from the website assistant (DEMO).\n\nName: {{ $json.name }}\nContact ({{ $json.contact_type }}): {{ $json.contact }}\nPreferred time: {{ $json.preferred_time }}\nConsent given: {{ $json.consent }} (text {{ $json.consent_text_version }})\nReceived: {{ $json.created_at }}\n\nPlease confirm the appointment within one working day.",
+        "text": "=A new booking request arrived from the website assistant (DEMO) at {{ $json.created_at }}.\n\nOpen the Leads sheet to see the details and confirm within one working day.\n\n(This email deliberately contains no personal data: the sheet row is deleted automatically after 90 days, an email copy would not be.)",
         "options": {}
       },
       "id": "6f0f6a52-1d1e-4a39-9a63-2a0b7a1c0004",

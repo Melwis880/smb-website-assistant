@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -35,7 +37,25 @@ class ChatResponse(BaseModel):
 def create_app(settings: Settings | None = None, engine: ChatEngine | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     engine = engine or ChatEngine(settings)
-    app = FastAPI(title=f"{settings.business_name} website assistant (demo)")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Retention: purge at startup, then once per interval, in a daemon thread.
+        stop = threading.Event()
+
+        def purge_loop() -> None:
+            while True:
+                try:
+                    engine.leads.purge()
+                except Exception:  # never let a purge error kill the loop
+                    log.exception("Lead purge failed")
+                if stop.wait(settings.purge_interval_hours * 3600):
+                    return
+
+        threading.Thread(target=purge_loop, name="lead-purge", daemon=True).start()
+        yield
+        stop.set()
+
+    app = FastAPI(title=f"{settings.business_name} website assistant (demo)", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware, allow_origins=settings.allowed_origins, allow_methods=["GET", "POST"], allow_headers=["Content-Type"]
     )

@@ -10,15 +10,18 @@ import re
 import threading
 import urllib.request
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-CONSENT_TEXT_VERSION = "v1"
+# The consent text promises this, and LeadStore.purge() enforces it. Not configurable on purpose:
+# changing it means changing what visitors agreed to (new CONSENT_TEXT_VERSION).
+RETENTION_DAYS = 90
+CONSENT_TEXT_VERSION = "v2"
 CONSENT_TEXT = (
     "May we store your name, contact details and preferred time so our front desk can contact "
-    "you about this appointment? We delete them after 90 days if you do not become a patient. "
+    f"you about this appointment? We automatically delete this request after {RETENTION_DAYS} days. "
     "Please answer yes or no."
 )
 
@@ -142,6 +145,43 @@ class LeadStore:
             urllib.request.urlopen(req, timeout=5).close()
         except Exception as exc:  # the lead is already saved; never fail the chat on this
             log.warning("Lead webhook failed: %s", exc)
+
+    def purge(self, older_than_days: int = RETENTION_DAYS, now: datetime | None = None) -> int:
+        """Delete leads older than `older_than_days`. Returns how many rows were removed.
+
+        Rewrites the file atomically (temp file + rename), keeping 0600 permissions.
+        Rows with an unreadable timestamp are kept and logged: deleting data we can't date
+        would hide a problem, and keeping it is visible in the log.
+        """
+        cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=older_than_days)
+        with self._lock:
+            if not self.path.exists():
+                return 0
+            with self.path.open(newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+            keep = []
+            for row in rows:
+                try:
+                    created = datetime.fromisoformat(row.get("created_at", "").lstrip("'"))
+                    if created.tzinfo is None:
+                        created = created.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    log.warning("Lead with unreadable created_at kept: %r", row.get("created_at"))
+                    keep.append(row)
+                    continue
+                if created >= cutoff:
+                    keep.append(row)
+            removed = len(rows) - len(keep)
+            if removed:
+                tmp = self.path.with_name(self.path.name + ".tmp")
+                with _open_private(tmp, "w") as f:
+                    writer = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
+                    writer.writeheader()
+                    writer.writerows(keep)
+                os.replace(tmp, self.path)
+        if removed:
+            log.info("Purged %d lead(s) older than %d days", removed, older_than_days)
+        return removed
 
     def read_all(self) -> list[dict[str, str]]:
         if not self.path.exists():

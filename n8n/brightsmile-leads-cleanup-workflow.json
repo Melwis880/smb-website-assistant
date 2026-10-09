@@ -1,0 +1,141 @@
+{
+  "id": "BrightsmileClean1",
+  "name": "Brightsmile Dental - delete leads older than 90 days",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 3
+            }
+          ]
+        }
+      },
+      "id": "7a1b2c3d-0000-4000-8000-000000000001",
+      "name": "Every day at 03:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Leads"
+        },
+        "options": {}
+      },
+      "id": "7a1b2c3d-0000-4000-8000-000000000002",
+      "name": "Read all leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rows whose created_at is older than 90 days (same rule as the app's LeadStore.purge).\n// Highest row number first, so deleting one row never shifts the rows still to delete.\nconst RETENTION_DAYS = 90;\nconst cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;\nreturn $input.all()\n  .map(item => item.json)\n  .filter(row => {\n    const t = Date.parse(row.created_at);\n    return !Number.isNaN(t) && t < cutoff;\n  })\n  .map(row => row.row_number)\n  .sort((a, b) => b - a)\n  .map(rowNumber => ({ json: { row_number: rowNumber } }));"
+      },
+      "id": "7a1b2c3d-0000-4000-8000-000000000003",
+      "name": "Pick expired rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Leads"
+        },
+        "toDelete": "rows",
+        "startIndex": "={{ $json.row_number }}",
+        "numberToDelete": 1
+      },
+      "id": "7a1b2c3d-0000-4000-8000-000000000004",
+      "name": "Delete row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        720,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every day at 03:00": {
+      "main": [
+        [
+          {
+            "node": "Read all leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read all leads": {
+      "main": [
+        [
+          {
+            "node": "Pick expired rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick expired rows": {
+      "main": [
+        [
+          {
+            "node": "Delete row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false
+}

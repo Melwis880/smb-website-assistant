@@ -76,7 +76,7 @@ def test_happy_path_saves_lead_after_consent(chat, settings, spy):
     assert row["name"] == "Anna Smith"
     assert row["contact"] == "anna@example.com"
     assert row["preferred_time"] == "Tuesday morning"
-    assert row["consent"] == "True" and row["consent_text_version"] == "v1"
+    assert row["consent"] == "True" and row["consent_text_version"] == "v2"
     assert spy.calls == []  # the booking flow never involves the model
 
 
@@ -252,3 +252,69 @@ def test_leads_file_is_private(chat, settings):
 
     chat(*BOOKING, "yes")
     assert stat.S_IMODE(settings.leads_path.stat().st_mode) == 0o600
+
+
+# --- retention -------------------------------------------------------------------------
+def _write_leads(store, ages_days):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    for i, age in enumerate(ages_days):
+        created = (now - timedelta(days=age)).isoformat(timespec="seconds")
+        store.save(Lead(name=f"Person {chr(65 + i)}", contact=f"p{i}@example.com", contact_type="email",
+                        preferred_time="Monday", session_id=f"s{i}", created_at=created))
+
+
+def test_purge_removes_only_expired_leads(settings):
+    import stat
+
+    from app.leads import LeadStore
+
+    store = LeadStore(settings.leads_path)
+    _write_leads(store, [120, 91, 89, 1])
+    assert store.purge(older_than_days=90) == 2
+    assert [r["name"] for r in rows(settings)] == ["Person C", "Person D"]
+    assert stat.S_IMODE(settings.leads_path.stat().st_mode) == 0o600
+    assert store.purge(older_than_days=90) == 0  # idempotent
+
+
+def test_purge_keeps_rows_it_cannot_date(settings):
+    from app.leads import LeadStore
+
+    store = LeadStore(settings.leads_path)
+    _write_leads(store, [200])
+    with settings.leads_path.open("a") as f:
+        f.write("Odd Row,o@example.com,email,Monday,s9,True,v2,not-a-date,website-chat\n")
+    assert store.purge() == 1
+    assert [r["name"] for r in rows(settings)] == ["Odd Row"]
+
+
+def test_purge_without_file_is_a_noop(settings):
+    from app.leads import LeadStore
+
+    assert LeadStore(settings.leads_path).purge() == 0
+
+
+def test_app_purges_at_startup(settings, spy):
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from app.chat import ChatEngine
+    from app.main import create_app
+
+    engine = ChatEngine(settings, model=spy)
+    _write_leads(engine.leads, [365, 2])
+    with TestClient(create_app(settings, engine)):
+        for _ in range(50):  # the purge runs in a background thread
+            if len(rows(settings)) == 1:
+                break
+            time.sleep(0.02)
+    assert [r["name"] for r in rows(settings)] == ["Person B"]
+
+
+def test_consent_text_matches_retention():
+    from app.leads import CONSENT_TEXT, CONSENT_TEXT_VERSION, RETENTION_DAYS
+
+    assert f"after {RETENTION_DAYS} days" in CONSENT_TEXT
+    assert CONSENT_TEXT_VERSION == "v2"

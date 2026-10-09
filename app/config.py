@@ -29,6 +29,7 @@ class Settings:
     allowed_origins: list[str] = field(default_factory=lambda: ["*"])
     min_retrieval_score: float = 2.0
     min_query_coverage: float = 0.5
+    purge_interval_hours: float = 24.0
     max_message_chars: int = 1000
     max_output_tokens: int = 400
     business_name: str = "Brightsmile Dental"
@@ -53,4 +54,5 @@ class Settings:
             allowed_origins=origins or ["*"],
             min_retrieval_score=float(os.getenv("MIN_RETRIEVAL_SCORE", "2.0")),
             min_query_coverage=float(os.getenv("MIN_QUERY_COVERAGE", "0.5")),
+            purge_interval_hours=float(os.getenv("LEAD_PURGE_INTERVAL_HOURS", "24")),
         )

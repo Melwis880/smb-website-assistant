@@ -105,6 +105,7 @@ All settings are environment variables (see `.env.example`). Secrets are never c
 | `LEADS_PATH` | `./leads.csv` | Where consented leads are appended |
 | `LEAD_WEBHOOK_URL` | (unset) | POST each new lead as JSON (e.g. to n8n) |
 | `LEAD_WEBHOOK_SECRET` | (unset) | Sent as `X-Webhook-Secret` header |
+| `LEAD_PURGE_INTERVAL_HOURS` | `24` | How often leads older than 90 days are deleted (also runs at startup) |
 | `ALLOWED_ORIGINS` | `*` | CORS origins allowed to call the API (restrict in production) |
 | `MIN_RETRIEVAL_SCORE` | `2.0` | BM25 score below which a section is ignored |
 | `MIN_QUERY_COVERAGE` | `0.5` | Share of question words that must appear in the content |
@@ -127,6 +128,21 @@ To adapt it to another business: replace the Markdown files in `data/`, and chan
    (names, emails, phone numbers) and refused messages are never sent to the model.
 
 `tests/test_injection.py` runs 10 attack strings plus tag-breaking and leak scenarios.
+
+## Data retention
+
+The consent question says: *"We automatically delete this request after 90 days."*
+(`CONSENT_TEXT_VERSION = "v2"`; each lead row records which text the visitor agreed to.)
+
+| Copy of the lead | How it is deleted |
+|---|---|
+| `leads.csv` | `LeadStore.purge()` at startup and every 24 h (background thread) |
+| Google Sheet (n8n) | `n8n/brightsmile-leads-cleanup-workflow.json`, daily. **If you don't run it, delete old rows manually.** |
+| Front-desk email | Contains no personal data, only "new request, see the sheet" |
+| Server memory | Sessions expire after 1 hour; booking input is never sent to Claude |
+
+The 90 days are a constant (`RETENTION_DAYS` in `app/leads.py`), not an env var: changing it changes
+what visitors agreed to, so it needs a new consent text version.
 
 ## Limitations (honest list)
 
