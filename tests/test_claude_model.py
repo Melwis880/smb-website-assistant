@@ -59,3 +59,14 @@ def test_client_gives_up_quickly():
     client = ClaudeModel(api_key="test-key", model="m", business="b").client
     assert client.max_retries == 1
     assert client.timeout.read == 10.0 and client.timeout.connect == 3.0
+
+
+def test_token_usage_is_logged_without_text(caplog):
+    import json
+
+    with caplog.at_level("INFO", logger="app.llm"):
+        make(FakeMessages()).answer("My name is Anna, how much is a filling?", HITS, [])
+    [line] = [r.getMessage() for r in caplog.records if '"event": "llm"' in r.getMessage()]
+    entry = json.loads(line)
+    assert entry["in"] == 321 and entry["out"] == 12 and entry["model"] == "claude-haiku-4-5-20251001"
+    assert "Anna" not in caplog.text and "EUR 90" not in caplog.text

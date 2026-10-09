@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -75,6 +77,7 @@ class ClaudeModel:
             for role, text in history[-6:]
         ]
         messages.append({"role": "user", "content": build_user_turn(question, hits)})
+        started = time.perf_counter()
         try:
             resp = self.client.messages.create(
                 model=self.name,
@@ -92,6 +95,14 @@ class ClaudeModel:
             log.error("Claude API error %s: %s", exc.status_code, exc.message)
             return Answer(NO_ANSWER)
         text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        # Token counts only, never text: real cost per answer without logging personal data.
+        log.info(json.dumps({
+            "event": "llm",
+            "model": self.name,
+            "in": resp.usage.input_tokens,
+            "out": resp.usage.output_tokens,
+            "ms": round((time.perf_counter() - started) * 1000, 1),
+        }))
         return Answer(text, resp.usage.input_tokens, resp.usage.output_tokens)
 
 
