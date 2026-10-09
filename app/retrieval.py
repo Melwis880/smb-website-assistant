@@ -63,28 +63,39 @@ TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9\-']*")
 
 
 def _stem(token: str) -> str:
-    """Very light stemming: enough to match 'missed' with 'miss' and 'fillings' with 'filling'."""
+    """Very light stemming so 'fillings', 'filling' and 'filled' all become 'fill'.
+
+    Plural first, then -ing/-ed, so every inflection of a word ends at the same stem.
+    """
     token = token.strip("'-")
+    if len(token) > 4 and token.endswith("ies"):
+        token = token[:-3] + "y"
+    elif len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        token = token[:-1]
     if len(token) > 5 and token.endswith("ing"):
         return token[:-3]
     if len(token) > 4 and token.endswith("ed") and not token.endswith("eed"):
         return token[:-2]
-    if len(token) > 4 and token.endswith("ies"):
-        return token[:-3] + "y"
-    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
-        return token[:-1]
     return token
 
 
-def tokenize(text: str, expand: bool = False) -> list[str]:
-    out: list[str] = []
+def _words(text: str) -> list[str]:
+    """Lower-cased content words (stopwords and English clitics removed), not yet stemmed."""
+    out = []
     for raw in TOKEN_RE.findall(text.lower()):
         raw = re.sub(r"'(s|re|ve|ll|d|m|t)?$", "", raw)
-        if raw in STOPWORDS:
-            continue
-        words = [raw] + (SYNONYMS.get(raw, []) if expand else [])
-        out.extend(_stem(w) for w in words)
-    return [t for t in out if t]
+        if raw and raw not in STOPWORDS:
+            out.append(raw)
+    return out
+
+
+def _terms(word: str, expand: bool) -> list[str]:
+    words = [word] + (SYNONYMS.get(word, []) if expand else [])
+    return [t for t in (_stem(w) for w in words) if t]
+
+
+def tokenize(text: str, expand: bool = False) -> list[str]:
+    return [t for w in _words(text) for t in _terms(w, expand)]
 
 
 @dataclass(frozen=True)
@@ -146,10 +157,10 @@ class Retriever:
         BM25 alone happily matches "best pizza *place* in town" to "we *place* implants".
         Requiring most of the question's words to be known filters such one-word coincidences.
         """
-        words = tokenize(query)
+        words = _words(query)
         if not words:
             return 0.0
-        known = sum(1 for w in words if w in self.idf or any(t in self.idf for t in tokenize(w, expand=True)))
+        known = sum(1 for w in words if any(t in self.idf for t in _terms(w, expand=True)))
         return known / len(words)
 
     def search(self, query: str, k: int = 3) -> list[Hit]:

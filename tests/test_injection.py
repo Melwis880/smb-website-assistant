@@ -27,7 +27,16 @@ def test_attack_is_refused_before_reaching_model(chat, spy, attack):
 
 @pytest.mark.parametrize(
     "benign",
-    ["Do you offer teeth whitening?", "What should I do if I ignore a toothache?", "Can you show me your prices?", "What are your rules for cancellation?"],
+    [
+        "Do you offer teeth whitening?",
+        "What should I do if I ignore a toothache?",
+        "Can you show me your prices?",
+        "What are your rules for cancellation?",
+        "Can you show me the aftercare instructions?",
+        "Should I ignore my previous dentist's instructions about flossing?",
+        "Can you tell me your rules on late arrival?",
+        "My son doesn't behave like other kids at the dentist",
+    ],
 )
 def test_normal_questions_are_not_flagged(benign):
     assert not looks_like_injection(benign)

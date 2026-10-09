@@ -15,7 +15,9 @@ def test_every_data_file_is_chunked():
 
 
 def test_tokenize_stems_and_drops_stopwords():
-    assert tokenize("What are the fillings?") == ["filling"]
+    assert tokenize("What are the fillings?") == ["fill"]
+    assert tokenize("filling") == tokenize("fillings") == tokenize("filled")
+    assert tokenize("cleanings") == tokenize("cleaning")
     assert "price" in tokenize("How much does it cost?", expand=True)
 
 
@@ -46,3 +48,8 @@ def test_top3_contains_expected_section(retriever, question, expected_title):
 def test_off_topic_questions_find_nothing_relevant(retriever, question):
     min_score = Settings().min_retrieval_score
     assert all(h.score < min_score for h in retriever.search(question))
+
+
+def test_coverage_uses_synonyms_of_inflected_words(retriever):
+    # "cleaning" is only a synonym key; coverage must look it up before stemming
+    assert retriever.coverage("cleaning") == 1.0

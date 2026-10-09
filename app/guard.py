@@ -18,16 +18,18 @@ import unicodedata
 CANARY = "BSD-CANARY-7f3a9c"
 
 _PATTERNS = [
-    r"\b(ignore|disregard|forget|override|bypass)\b.{0,40}\b(previous|prior|above|earlier|all|your|the|system)\b.{0,20}\b(instructions?|rules?|prompts?|directions?|guidelines?)",
+    # "ignore (all) (your/the/previous...) instructions", but not "ignore my previous dentist's instructions"
+    r"\b(ignore|disregard|forget|override|bypass)\s+(?:(?:all|any|of|the|your|these|those|previous|prior|above|earlier|preceding|system)\s+){1,4}(instructions?|rules?|prompts?|directions?|guidelines?)\b",
     r"\b(system|developer|hidden|initial)\s+(prompt|message|instructions?)\b",
     r"\byou\s+are\s+now\b",
-    r"\b(act|behave|pretend|roleplay)\s+(as|like)\b",
+    r"\b(act|pretend|roleplay)\s+(as|like)\b",
     r"\b(pretend|imagine)\s+(that\s+)?(you\s*(are|'re)|to\s+be)\b",
     r"\bnew\s+(instructions?|rules?|persona)\b",
     r"\b(jailbreak|dan\s+mode|developer\s+mode)\b",
     r"</?\s*(system|visitor_message|context|instructions?)\s*>",
     r"\breveal\b.{0,30}\b(prompt|instructions?|rules?|configuration|api\s*key)\b",
-    r"\b(print|repeat|output|show)\b.{0,30}\b(prompt|instructions?|everything\s+above)\b",
+    # "show your instructions", "print the system prompt", but not "show me the aftercare instructions"
+    r"\b(print|repeat|output|show)\b.{0,30}\b(your\s+(system\s+)?(prompt|instructions?)|system\s+prompt|everything\s+above)\b",
 ]
 _INJECTION_RE = re.compile("|".join(f"(?:{p})" for p in _PATTERNS), re.IGNORECASE | re.DOTALL)
 
