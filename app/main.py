@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,6 +23,9 @@ from .limits import SlidingWindowLimiter
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("assistant")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+# A chat can wait seconds on Claude. Chats get their own threads, so a slow API can never take
+# the shared pool that serves /healthz, the demo page and widget.js. Extra chats queue here.
+CHAT_THREADS = 20
 
 
 class BodySizeLimit:
@@ -86,6 +91,7 @@ class ChatResponse(BaseModel):
 def create_app(settings: Settings | None = None, engine: ChatEngine | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     engine = engine or ChatEngine(settings)
+    chat_pool = ThreadPoolExecutor(max_workers=CHAT_THREADS, thread_name_prefix="chat")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -104,6 +110,7 @@ def create_app(settings: Settings | None = None, engine: ChatEngine | None = Non
         threading.Thread(target=purge_loop, name="lead-purge", daemon=True).start()
         yield
         stop.set()
+        chat_pool.shutdown(wait=False)
 
     docs = settings.enable_docs  # /docs, /redoc and /openapi.json only when ENABLE_DOCS=1
     app = FastAPI(
@@ -141,11 +148,11 @@ def create_app(settings: Settings | None = None, engine: ChatEngine | None = Non
     log.info("Starting with model=%s mock=%s chunks=%d", engine.model.name, settings.mock_llm, len(engine.retriever.chunks))
 
     @app.get("/healthz")
-    def healthz() -> dict:
+    async def healthz() -> dict:  # async: answers even when every worker thread is busy
         return {"status": "ok"}  # no model name or mode: nothing for a scanner to fingerprint
 
     @app.post("/api/chat", response_model=ChatResponse, responses={429: {}, 413: {}})
-    def chat(req: ChatRequest, request: Request):
+    async def chat(req: ChatRequest, request: Request):
         # Behind a reverse proxy, run uvicorn with --forwarded-allow-ips so this is the visitor's IP.
         client_ip = request.client.host if request.client else "unknown"
         if not per_ip.hit(client_ip):
@@ -155,7 +162,9 @@ def create_app(settings: Settings | None = None, engine: ChatEngine | None = Non
                 headers={"Retry-After": "60"},
             )
         started = time.perf_counter()
-        session_id, reply = engine.handle(req.session_id, req.message, client_ip)
+        session_id, reply = await asyncio.get_running_loop().run_in_executor(
+            chat_pool, engine.handle, req.session_id, req.message, client_ip
+        )
         # One structured log line per turn; no message text or personal data is logged.
         log.info(json.dumps({"event": "chat", "type": reply.type, "ms": round((time.perf_counter() - started) * 1000, 1)}))
         return ChatResponse(session_id=session_id, reply=reply.reply, type=reply.type, sources=reply.sources)
