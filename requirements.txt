@@ -1,4 +1,5 @@
 fastapi>=0.115,<1
-uvicorn[standard]>=0.30
-anthropic>=0.40
+uvicorn[standard]>=0.30,<1
+# 1.x: built on httpx2 (tests/test_claude_model.py relies on that); <2 guards the next major
+anthropic>=1.0,<2
 pydantic>=2.7,<3
