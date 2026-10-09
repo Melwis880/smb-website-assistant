@@ -1,4 +1,5 @@
 import csv
+from pathlib import Path
 
 import pytest
 
@@ -318,3 +319,79 @@ def test_consent_text_matches_retention():
 
     assert f"after {RETENTION_DAYS} days" in CONSENT_TEXT
     assert CONSENT_TEXT_VERSION == "v2"
+
+
+# --- webhook transport -----------------------------------------------------------------
+@pytest.mark.parametrize(
+    "url",
+    ["http://hooks.example.com/lead", "ftp://hooks.example.com/lead", "https://", "http://10.0.0.5/hook", "javascript:alert(1)"],
+)
+def test_webhook_url_must_be_https(url):
+    from app.leads import LeadStore, validate_webhook_url
+
+    with pytest.raises(ValueError):
+        validate_webhook_url(url)
+    with pytest.raises(ValueError):
+        LeadStore(Path("/tmp/unused.csv"), webhook_url=url)
+
+
+@pytest.mark.parametrize("url", ["https://n8n.example.com/webhook/x", "http://localhost:5678/webhook/x", "http://127.0.0.1:5678/w"])
+def test_webhook_url_allowed(url):
+    from app.leads import validate_webhook_url
+
+    assert validate_webhook_url(url) == url
+
+
+def test_webhook_does_not_follow_redirects(settings, spy):
+    import threading
+    import time
+    from dataclasses import replace
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from app.chat import ChatEngine
+
+    hits = {"redirector": 0, "target": 0}
+    leaked = []
+    done = threading.Event()
+
+    class Target(BaseHTTPRequestHandler):
+        def do_POST(self):
+            hits["target"] += 1
+            leaked.append(self.headers.get("X-Webhook-Secret"))
+            self.send_response(200)
+            self.end_headers()
+
+        do_GET = do_POST
+
+        def log_message(self, *args):
+            pass
+
+    target = HTTPServer(("127.0.0.1", 0), Target)
+    threading.Thread(target=target.serve_forever, daemon=True).start()
+
+    class Redirector(BaseHTTPRequestHandler):
+        def do_POST(self):
+            hits["redirector"] += 1
+            # urllib follows a 302 as a GET and keeps custom headers, so the secret would leak
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{target.server_port}/stolen")
+            self.end_headers()
+            done.set()
+
+        def log_message(self, *args):
+            pass
+
+    redirector = HTTPServer(("127.0.0.1", 0), Redirector)
+    threading.Thread(target=redirector.handle_request, daemon=True).start()
+    url = f"http://127.0.0.1:{redirector.server_port}/hook"
+    engine = ChatEngine(replace(settings, lead_webhook_url=url, lead_webhook_secret="s3cret"), model=spy)
+    sid = None
+    for m in (*BOOKING, "yes"):
+        sid, reply = engine.handle(sid, m)
+    assert reply.type == "lead_saved"
+    assert done.wait(5)
+    time.sleep(0.3)  # give a (wrongly) followed redirect time to arrive
+    target.shutdown()
+    redirector.server_close()
+    assert hits == {"redirector": 1, "target": 0}, f"redirect followed, secret sent: {leaked}"
+    assert len(rows(settings)) == 1  # the lead is still saved locally

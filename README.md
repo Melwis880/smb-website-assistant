@@ -103,7 +103,7 @@ All settings are environment variables (see `.env.example`). Secrets are never c
 | `CLAUDE_MODEL` | `claude-haiku-4-5-20251001` | Model for answers |
 | `DATA_DIR` | `./data` | Folder of Markdown content |
 | `LEADS_PATH` | `./leads.csv` | Where consented leads are appended |
-| `LEAD_WEBHOOK_URL` | (unset) | POST each new lead as JSON (e.g. to n8n) |
+| `LEAD_WEBHOOK_URL` | (unset) | POST each new lead as JSON (e.g. to n8n). Must be `https://` (plain http only for localhost); redirects are refused |
 | `LEAD_WEBHOOK_SECRET` | (unset) | Sent as `X-Webhook-Secret` header |
 | `LEAD_PURGE_INTERVAL_HOURS` | `24` | How often leads older than 90 days are deleted (also runs at startup) |
 | `ALLOWED_ORIGINS` | `*` | CORS origins allowed to call the API (restrict in production) |

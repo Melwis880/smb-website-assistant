@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import threading
+import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -105,6 +106,30 @@ class Lead:
 FIELDS = list(Lead.__dataclass_fields__)
 
 
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def validate_webhook_url(url: str) -> str:
+    """Leads are personal data: only send them over https (plain http only to this machine)."""
+    parts = urllib.parse.urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if not host:
+        raise ValueError(f"LEAD_WEBHOOK_URL has no host: {url!r}")
+    if parts.scheme == "https" or (parts.scheme == "http" and host in LOCAL_HOSTS):
+        return url
+    raise ValueError("LEAD_WEBHOOK_URL must use https:// (http:// is only allowed for localhost/127.0.0.1)")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect could forward lead data (and the shared secret) to another host: refuse it."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+        return None  # urllib then raises HTTPError for the 3xx response
+
+
+_WEBHOOK_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _open_private(path: Path, mode: str):
     """Open for writing; a newly created file gets 0600 (owner read/write only), whatever the umask."""
     flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == "a" else os.O_TRUNC)
@@ -115,7 +140,7 @@ def _open_private(path: Path, mode: str):
 class LeadStore:
     def __init__(self, path: Path, webhook_url: str | None = None, webhook_secret: str | None = None):
         self.path = path
-        self.webhook_url = webhook_url
+        self.webhook_url = validate_webhook_url(webhook_url) if webhook_url else None
         self.webhook_secret = webhook_secret
         self._lock = threading.Lock()
 
@@ -142,7 +167,7 @@ class LeadStore:
             req = urllib.request.Request(
                 self.webhook_url, data=json.dumps(asdict(lead)).encode(), headers=headers, method="POST"
             )
-            urllib.request.urlopen(req, timeout=5).close()
+            _WEBHOOK_OPENER.open(req, timeout=5).close()
         except Exception as exc:  # the lead is already saved; never fail the chat on this
             log.warning("Lead webhook failed: %s", exc)
 
