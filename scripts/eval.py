@@ -21,10 +21,13 @@ sys.path.insert(0, str(ROOT))
 
 from app.chat import ChatEngine  # noqa: E402
 from app.config import Settings  # noqa: E402
-from app.llm import ClaudeModel  # noqa: E402
 
-# USD per million tokens, Claude Haiku 4.5 list price (check current pricing before quoting).
-PRICE_IN, PRICE_OUT = 1.00, 5.00
+# USD per million input/output tokens, list prices (check current pricing before quoting).
+# A model not listed here gets token counts but no cost line, rather than a wrong one.
+PRICES = {
+    "claude-haiku-4-5": (1.00, 5.00),
+    "claude-haiku-4-5-20251001": (1.00, 5.00),
+}
 
 
 def main() -> int:
@@ -32,18 +35,18 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         settings = replace(Settings.from_env(), leads_path=Path(tmp) / "leads.csv")
         engine = ChatEngine(settings)
-        tokens_in = tokens_out = 0
-        if isinstance(engine.model, ClaudeModel):  # wrap to count usage
-            inner = engine.model.answer
+        calls = tokens_in = tokens_out = 0
+        inner = engine.model.answer  # wrap to count real calls and usage (mock reports 0 tokens)
 
-            def counting(*a, **kw):
-                nonlocal tokens_in, tokens_out
-                ans = inner(*a, **kw)
-                tokens_in += ans.input_tokens
-                tokens_out += ans.output_tokens
-                return ans
+        def counting(*a, **kw):
+            nonlocal calls, tokens_in, tokens_out
+            ans = inner(*a, **kw)
+            calls += 1
+            tokens_in += ans.input_tokens
+            tokens_out += ans.output_tokens
+            return ans
 
-            engine.model.answer = counting  # type: ignore[method-assign]
+        engine.model.answer = counting  # type: ignore[method-assign]
 
         latencies: list[float] = []
         failures: list[str] = []
@@ -93,10 +96,15 @@ def main() -> int:
     print(f"Injection -> refused:      {inj}/{len(qs['injection'])}")
     print(f"Booking -> lead flow:      {book}/{len(qs['booking'])}")
     print(f"Latency per turn (ms):     median {statistics.median(latencies):.1f}, max {max(latencies):.1f}")
+    print(f"Model calls:               {calls} (questions refused or handed off never reach the model)")
     if tokens_in:
-        calls = n_in
-        cost = tokens_in / 1e6 * PRICE_IN + tokens_out / 1e6 * PRICE_OUT
-        print(f"Tokens: {tokens_in} in / {tokens_out} out over ~{calls} model calls; cost ${cost:.4f}")
+        print(f"Tokens: {tokens_in} in / {tokens_out} out over {calls} model calls")
+        if engine.model.name in PRICES:
+            price_in, price_out = PRICES[engine.model.name]
+            cost = tokens_in / 1e6 * price_in + tokens_out / 1e6 * price_out
+            print(f"Cost: ${cost:.4f} total, ${cost / calls:.5f} per model call (list price)")
+        else:
+            print(f"Cost: no price for {engine.model.name!r} in PRICES; add it to get a cost line")
     if failures:
         print("\nMisses:")
         print("\n".join(f"  - {f}" for f in failures))
