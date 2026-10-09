@@ -57,6 +57,7 @@ def test_body_over_16kb_is_rejected_with_413(settings, spy):
     big = '{"message": "' + "a" * 17_000 + '"}'
     r = c.post("/api/chat", content=big, headers={"Content-Type": "application/json"})
     assert r.status_code == 413
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
     assert spy.calls == []
 
 

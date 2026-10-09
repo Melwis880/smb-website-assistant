@@ -86,6 +86,7 @@ class ChatResponse(BaseModel):
 def create_app(settings: Settings | None = None, engine: ChatEngine | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     engine = engine or ChatEngine(settings)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Retention: purge at startup, then once per interval, in a daemon thread.
@@ -113,6 +114,9 @@ def create_app(settings: Settings | None = None, engine: ChatEngine | None = Non
         openapi_url="/openapi.json" if docs else None,
     )
 
+    app.add_middleware(BodySizeLimit, max_bytes=settings.max_body_bytes)
+
+    # Registered after BodySizeLimit so it wraps it: 413 responses get the headers too.
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
@@ -125,7 +129,6 @@ def create_app(settings: Settings | None = None, engine: ChatEngine | None = Non
             response.headers["Content-Security-Policy"] = DEFAULT_CSP
         return response
 
-    app.add_middleware(BodySizeLimit, max_bytes=settings.max_body_bytes)
     if settings.allowed_origins:  # otherwise same-origin only: no CORS headers at all
         app.add_middleware(
             CORSMiddleware,
