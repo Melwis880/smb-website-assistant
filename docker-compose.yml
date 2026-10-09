@@ -14,6 +14,12 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
       MIN_RETRIEVAL_SCORE: ${MIN_RETRIEVAL_SCORE:-2.0}
       MIN_QUERY_COVERAGE: ${MIN_QUERY_COVERAGE:-0.5}
+      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-16384}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-20}
+      LEADS_PER_IP_PER_DAY: ${LEADS_PER_IP_PER_DAY:-3}
+      LLM_DAILY_CALL_BUDGET: ${LLM_DAILY_CALL_BUDGET:-1000}
+      # IP of your reverse proxy, so rate limits see the visitor's IP (uvicorn reads this)
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
     volumes:
       # Named volume: inherits the non-root user's ownership from the image (a host bind mount
       # would be root-owned and the app could not write). Read leads with:

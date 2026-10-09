@@ -106,6 +106,11 @@ All settings are environment variables (see `.env.example`). Secrets are never c
 | `LEAD_WEBHOOK_URL` | (unset) | POST each new lead as JSON (e.g. to n8n). Must be `https://` (plain http only for localhost); redirects are refused |
 | `LEAD_WEBHOOK_SECRET` | (unset) | Sent as `X-Webhook-Secret` header |
 | `LEAD_PURGE_INTERVAL_HOURS` | `24` | How often leads older than 90 days are deleted (also runs at startup) |
+| `MAX_BODY_BYTES` | `16384` | Larger request bodies get HTTP 413 |
+| `RATE_LIMIT_PER_MINUTE` | `20` | Chat messages per IP per minute (HTTP 429 above) |
+| `LEADS_PER_IP_PER_DAY` | `3` | Saved booking requests per IP per rolling 24 h |
+| `LLM_DAILY_CALL_BUDGET` | `1000` | Claude calls per UTC day; when exhausted, questions get the human handoff (no API call) |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | uvicorn setting: your reverse proxy's IP, so limits see the visitor's IP |
 | `ALLOWED_ORIGINS` | `*` | CORS origins allowed to call the API (restrict in production) |
 | `MIN_RETRIEVAL_SCORE` | `2.0` | BM25 score below which a section is ignored |
 | `MIN_QUERY_COVERAGE` | `0.5` | Share of question words that must appear in the content |
@@ -128,6 +133,42 @@ To adapt it to another business: replace the Markdown files in `data/`, and chan
    (names, emails, phone numbers) and refused messages are never sent to the model.
 
 `tests/test_injection.py` runs 10 attack strings plus tag-breaking and leak scenarios.
+
+## Production hardening
+
+The app has its own abuse limits (table above): a 16 KB body cap, per-IP rate limit, per-IP lead
+cap and a daily Claude call budget. They live **in memory, per process**: they reset on restart and
+aren't shared between workers. Put a reverse proxy in front anyway, so floods are dropped before
+they reach Python. A minimal nginx example:
+
+```nginx
+# http { ... }
+limit_req_zone $binary_remote_addr zone=chat:10m rate=20r/m;
+
+server {
+    listen 443 ssl;
+    server_name assistant.example.com;
+    # ssl_certificate ... ;
+
+    client_max_body_size 16k;
+
+    location /api/chat {
+        limit_req zone=chat burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+Behind a proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address; otherwise every visitor
+appears as the proxy's IP and they all share one rate limit.
 
 ## Data retention
 

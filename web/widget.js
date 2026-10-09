@@ -122,16 +122,24 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: text, session_id: sessionId })
     })
-      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (data) {
+          if (r.ok) return data;
+          var err = new Error("HTTP " + r.status);
+          // Rate limit (429) and size limit (413) messages are written for visitors; show them.
+          if ((r.status === 429 || r.status === 413) && data && typeof data.detail === "string") err.detail = data.detail;
+          throw err;
+        });
+      })
       .then(function (data) {
         sessionId = data.session_id;
         try { sessionStorage.setItem(STORE_KEY, sessionId); } catch (e) {}
         log.removeChild(pending);
         add(data.reply, "bot", data.type === "answer" ? data.sources : null);
       })
-      .catch(function () {
+      .catch(function (err) {
         if (pending.parentNode) log.removeChild(pending);
-        add("Sorry, something went wrong. Please call us or try again.", "bot");
+        add((err && err.detail) || "Sorry, something went wrong. Please call us or try again.", "bot");
       })
       .then(function () { send.disabled = false; input.focus(); });
   });

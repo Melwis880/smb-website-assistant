@@ -9,17 +9,57 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from .chat import ChatEngine
 from .config import Settings
+from .limits import SlidingWindowLimiter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("assistant")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+
+class BodySizeLimit:
+    """Reject request bodies over `max_bytes` with 413, before FastAPI parses them.
+
+    Checks Content-Length when present and also counts the bytes actually received, so a
+    chunked request without Content-Length can't get around it.
+    """
+
+    def __init__(self, app, max_bytes: int):
+        self.app, self.max_bytes = app, max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or self.max_bytes <= 0:
+            return await self.app(scope, receive, send)
+        headers = dict(scope.get("headers") or [])
+        declared = headers.get(b"content-length")
+        if declared is not None and (not declared.isdigit() or int(declared) > self.max_bytes):
+            return await self._reject(scope, receive, send)
+        messages, total = [], 0
+        while True:
+            message = await receive()
+            messages.append(message)
+            if message["type"] != "http.request":
+                break
+            total += len(message.get("body", b""))
+            if total > self.max_bytes:
+                return await self._reject(scope, receive, send)
+            if not message.get("more_body", False):
+                break
+
+        async def replay():
+            return messages.pop(0) if messages else await receive()
+
+        await self.app(scope, replay, send)
+
+    async def _reject(self, scope, receive, send):
+        response = JSONResponse({"detail": f"Request body too large (max {self.max_bytes} bytes)."}, status_code=413)
+        await response(scope, receive, send)
 
 
 class ChatRequest(BaseModel):
@@ -56,20 +96,30 @@ def create_app(settings: Settings | None = None, engine: ChatEngine | None = Non
         stop.set()
 
     app = FastAPI(title=f"{settings.business_name} website assistant (demo)", lifespan=lifespan)
+    app.add_middleware(BodySizeLimit, max_bytes=settings.max_body_bytes)
     app.add_middleware(
         CORSMiddleware, allow_origins=settings.allowed_origins, allow_methods=["GET", "POST"], allow_headers=["Content-Type"]
     )
     app.state.engine = engine
+    per_ip = SlidingWindowLimiter(settings.rate_limit_per_minute, 60)
     log.info("Starting with model=%s mock=%s chunks=%d", engine.model.name, settings.mock_llm, len(engine.retriever.chunks))
 
     @app.get("/healthz")
     def healthz() -> dict:
         return {"status": "ok", "model": engine.model.name, "mock": settings.mock_llm}
 
-    @app.post("/api/chat", response_model=ChatResponse)
-    def chat(req: ChatRequest) -> ChatResponse:
+    @app.post("/api/chat", response_model=ChatResponse, responses={429: {}, 413: {}})
+    def chat(req: ChatRequest, request: Request):
+        # Behind a reverse proxy, run uvicorn with --forwarded-allow-ips so this is the visitor's IP.
+        client_ip = request.client.host if request.client else "unknown"
+        if not per_ip.hit(client_ip):
+            return JSONResponse(
+                {"detail": "Too many messages. Please wait a minute and try again."},
+                status_code=429,
+                headers={"Retry-After": "60"},
+            )
         started = time.perf_counter()
-        session_id, reply = engine.handle(req.session_id, req.message)
+        session_id, reply = engine.handle(req.session_id, req.message, client_ip)
         # One structured log line per turn; no message text or personal data is logged.
         log.info(json.dumps({"event": "chat", "type": reply.type, "ms": round((time.perf_counter() - started) * 1000, 1)}))
         return ChatResponse(session_id=session_id, reply=reply.reply, type=reply.type, sources=reply.sources)

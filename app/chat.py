@@ -26,6 +26,7 @@ from .leads import (
     validate_name,
     validate_preferred_time,
 )
+from .limits import DailyBudget, SlidingWindowLimiter
 from .llm import AnswerModel, ClaudeModel, MockModel
 from .retrieval import Retriever
 
@@ -97,6 +98,8 @@ class ChatEngine:
         )
         self.leads = LeadStore(settings.leads_path, settings.lead_webhook_url, settings.lead_webhook_secret)
         self.sessions = SessionStore()
+        self.leads_per_ip = SlidingWindowLimiter(settings.leads_per_ip_per_day, 24 * 3600)
+        self.llm_budget = DailyBudget(settings.llm_daily_call_budget)
 
     # --- canned texts -------------------------------------------------------------------
     def _fallback(self) -> str:
@@ -106,6 +109,13 @@ class ChatEngine:
             "so the front desk can get back to you."
         )
 
+    def _too_many_leads(self) -> Reply:
+        return Reply(
+            "We've already received several booking requests from your connection today, so I can't "
+            f"take another one here. Please contact us directly: {self.s.handoff_contact}.",
+            "fallback",
+        )
+
     def _refusal(self) -> str:
         return (
             f"I can only help with questions about {self.s.business_name}: our services, prices, "
@@ -113,14 +123,14 @@ class ChatEngine:
         )
 
     # --- main entry point -------------------------------------------------------------------
-    def handle(self, session_id: str | None, message: str) -> tuple[str, Reply]:
+    def handle(self, session_id: str | None, message: str, client_ip: str = "unknown") -> tuple[str, Reply]:
         sess = self.sessions.get(session_id)
         text = guard.clean_text(message, self.s.max_message_chars)
         if not text:
             return sess.id, Reply("Please type a question.", "fallback")
         with sess.lock:
             in_lead_flow = sess.stage is not None
-            reply = self._lead_step(sess, text) if sess.stage else self._route(sess, text)
+            reply = self._lead_step(sess, text, client_ip) if sess.stage else self._route(sess, text, client_ip)
             # History is sent to the model for follow-up questions, so it only keeps question/answer
             # turns: never booking-flow input (names, emails, phone numbers) and never refused text.
             if not in_lead_flow and reply.type in ("answer", "fallback"):
@@ -128,12 +138,16 @@ class ChatEngine:
                 sess.history = sess.history[-12:]
         return sess.id, reply
 
-    def _route(self, sess: Session, text: str) -> Reply:
+    def _route(self, sess: Session, text: str, client_ip: str = "unknown") -> Reply:
         if guard.looks_like_injection(text):
             return Reply(self._refusal(), "refusal")
-        if HUMAN_RE.search(text) and not BOOKING_QUESTION_RE.match(text):
+        wants_human = HUMAN_RE.search(text) and not BOOKING_QUESTION_RE.match(text)
+        wants_booking = BOOKING_RE.search(text) and not BOOKING_QUESTION_RE.match(text)
+        if (wants_human or wants_booking) and not self.leads_per_ip.allowed(client_ip):
+            return self._too_many_leads()  # don't ask for details we would refuse to save
+        if wants_human:
             return self._start_lead(sess, intro=f"Of course. You can reach our team at {self.s.handoff_contact}. ")
-        if BOOKING_RE.search(text) and not BOOKING_QUESTION_RE.match(text):
+        if wants_booking:
             return self._start_lead(sess)
         return self._answer(sess, text)
 
@@ -153,6 +167,9 @@ class ChatEngine:
                 hits = self._relevant(f"{prev} {text}")
         if not hits:
             return Reply(self._fallback(), "fallback")
+        if not self.llm_budget.try_spend():
+            log.warning("Daily LLM call budget exhausted; answering with the human handoff")
+            return Reply(self._fallback(), "fallback")
         ans = self.model.answer(text, hits, sess.history)
         if ans.is_no_answer:
             return Reply(self._fallback(), "fallback")
@@ -170,7 +187,7 @@ class ChatEngine:
             "lead_question",
         )
 
-    def _lead_step(self, sess: Session, text: str) -> Reply:
+    def _lead_step(self, sess: Session, text: str, client_ip: str = "unknown") -> Reply:
         if CANCEL_RE.match(text):
             sess.stage, sess.draft = None, {}
             return Reply("No problem, I've stopped and nothing was saved. Anything else I can help with?", "lead_cancelled")
@@ -187,7 +204,7 @@ class ChatEngine:
                 sess.draft["preferred_time"] = validate_preferred_time(text)
                 sess.stage = "consent"
             elif sess.stage == "consent":
-                return self._consent(sess, text)
+                return self._consent(sess, text, client_ip)
         except ValidationError as exc:
             return Reply(str(exc), "lead_question")
         return Reply(self._question_for(sess.stage), "lead_question")
@@ -200,7 +217,7 @@ class ChatEngine:
             "consent": CONSENT_TEXT,
         }.get(stage or "", "")
 
-    def _consent(self, sess: Session, text: str) -> Reply:
+    def _consent(self, sess: Session, text: str, client_ip: str = "unknown") -> Reply:
         decision = parse_consent(text)
         if decision is None:
             return Reply("Sorry, I need a clear yes or no. " + CONSENT_TEXT, "lead_question")
@@ -213,6 +230,8 @@ class ChatEngine:
                 f"or contact us at {self.s.handoff_contact}.",
                 "lead_cancelled",
             )
+        if decision and not self.leads_per_ip.hit(client_ip):
+            return self._too_many_leads()
         if not decision:
             return Reply(
                 f"Understood, I have not saved your details. You can reach us at {self.s.handoff_contact}.",

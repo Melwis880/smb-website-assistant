@@ -30,6 +30,11 @@ class Settings:
     min_retrieval_score: float = 2.0
     min_query_coverage: float = 0.5
     purge_interval_hours: float = 24.0
+    # Abuse limits (0 = unlimited). In-memory, per process; see README "Production hardening".
+    max_body_bytes: int = 16 * 1024
+    rate_limit_per_minute: int = 20
+    leads_per_ip_per_day: int = 3
+    llm_daily_call_budget: int = 1000
     max_message_chars: int = 1000
     max_output_tokens: int = 400
     business_name: str = "Brightsmile Dental"
@@ -55,4 +60,8 @@ class Settings:
             min_retrieval_score=float(os.getenv("MIN_RETRIEVAL_SCORE", "2.0")),
             min_query_coverage=float(os.getenv("MIN_QUERY_COVERAGE", "0.5")),
             purge_interval_hours=float(os.getenv("LEAD_PURGE_INTERVAL_HOURS", "24")),
+            max_body_bytes=int(os.getenv("MAX_BODY_BYTES", str(16 * 1024))),
+            rate_limit_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "20")),
+            leads_per_ip_per_day=int(os.getenv("LEADS_PER_IP_PER_DAY", "3")),
+            llm_daily_call_budget=int(os.getenv("LLM_DAILY_CALL_BUDGET", "1000")),
         )
