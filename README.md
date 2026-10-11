@@ -229,5 +229,6 @@ what visitors agreed to, so it needs a new consent text version.
 - **No calendar integration**: the front desk confirms each request manually.
 - Out of scope by design: auth, multi-tenant, payments.
 
-## License / data
-Demo content is fictional. Code is provided as a portfolio case study.
+## License
+
+MIT, see [LICENSE](LICENSE). The demo content in `data/` is fictional.
