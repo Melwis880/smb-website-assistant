@@ -1,7 +1,7 @@
 // Regenerates docs/widget-demo.png from a live mock-mode run of the demo page.
 //
 //   MOCK_LLM=1 uvicorn app.main:app &          # serve the demo on :8000
-//   npm install playwright                      # or use a global install via NODE_PATH
+//   npm install --no-save playwright           # or use a global install via NODE_PATH
 //   node docs/capture-widget-demo.js            # CHROMIUM_PATH=... to use an existing Chromium
 //
 // It types three questions into the real widget, captures the chat panel twice and puts the two
