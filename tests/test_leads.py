@@ -29,7 +29,7 @@ def test_invalid_names(raw):
 
 @pytest.mark.parametrize(
     "raw, expected",
-    [("Anna@Example.com", ("anna@example.com", "email")), ("+49 171 123-4567", ("+491711234567", "phone")), ("0171 1234567", ("01711234567", "phone"))],
+    [("Anna@Example.com", ("anna@example.com", "email")), ("+44 7700 900-123", ("+447700900123", "phone")), ("07700 900123", ("07700900123", "phone"))],
 )
 def test_valid_contacts(raw, expected):
     assert validate_contact(raw) == expected
@@ -57,7 +57,7 @@ def test_consent_parsing_is_strict():
 
 def test_csv_formula_injection_is_neutralised():
     assert csv_safe("=1+1") == "'=1+1"
-    assert csv_safe("+491711234567") == "'+491711234567"
+    assert csv_safe("+447700900123") == "'+447700900123"
     assert csv_safe("Anna") == "Anna"
 
 

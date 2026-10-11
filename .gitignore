@@ -17,6 +17,9 @@ build/
 .coverage
 htmlcov/
 
+# Node (only used by docs/capture-widget-demo.js)
+node_modules/
+
 # Runtime data
 *.sqlite
 *.db
