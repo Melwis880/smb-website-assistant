@@ -22,7 +22,7 @@ all numbers are measured on **fictional demo data** unless marked "estimate".
 5. **Mock mode is extractive, not canned.** `MOCK_LLM=1` returns the best-matching sentences from
    the retrieved sections. Tests and the demo then exercise real retrieval and grounding, not a
    lookup table of fixed answers.
-6. **Default model `claude-haiku-4-5-20251001`** (per brief): short, grounded answers don't need a
+6. **Default model `claude-haiku-4-5-20251001`** (per the project brief in [CLAUDE.md](CLAUDE.md)): short, grounded answers don't need a
    bigger model; configurable via `CLAUDE_MODEL`.
 7. **Prompt-injection defence in layers**: regex pre-filter (cheap, deterministic) → visitor text
    wrapped in `<visitor_message>` and declared "data, not instructions" → canary string in the

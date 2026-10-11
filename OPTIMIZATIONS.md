@@ -2,6 +2,8 @@
 
 Audit date: 2026-10-09 · Commit audited: `a0a527e` · Scope: `app/`, `web/`, `scripts/eval.py`,
 `Dockerfile`, `docker-compose.yml`, CI, config files.
+Commit hashes in this file are the individual commits of
+[pull request #1](https://github.com/Melwis880/smb-website-assistant/pull/1), which was squash-merged into `main`.
 
 Report only: no code was changed. All numbers below were measured locally on the fictional demo
 data in mock mode (`MOCK_LLM=1`, Python 3.13, `.venv`) unless they are marked **estimate**.
@@ -232,7 +234,7 @@ halfway through the booking flow.
 - **Severity:** Low. The absolute spend is small: the default budget caps it at about $1.2 per day
   (**estimate**, from F4).
 - **Impact:** cost per answer.
-- **Evidence:** the brief sets `claude-haiku-4-5-20251001` as the default ($1 / $5 per million
+- **Evidence:** the project brief ([CLAUDE.md](CLAUDE.md)) sets `claude-haiku-4-5-20251001` as the default ($1 / $5 per million
   input/output tokens). Claude Haiku 5.5 (`claude-haiku-5-5`) is listed at $0.10 / $0.50 for prompts
   of 100K tokens or fewer. The model is already switchable through `CLAUDE_MODEL`.
 - **Why it matters:** list price per answer would be about 7–8× lower, even after Haiku 5.5's
@@ -245,7 +247,7 @@ halfway through the booking flow.
     Haiku 5.5.
   - Haiku 5.5 can return `stop_reason: "refusal"` with no fallback. The current code already treats
     "no text" as `NO_ANSWER`, which becomes the human handoff, so that case is safe.
-- **Recommended fix:** keep Haiku 4.5 as the default, as the brief requires. Run `scripts/eval.py`
+- **Recommended fix:** keep Haiku 4.5 as the default, as the project brief requires. Run `scripts/eval.py`
   with a real key on both models and compare grounded answers, out-of-scope handling, injection
   results and cost. Switch only if quality holds.
 - **Tradeoffs / Risks:** the quality difference on this task is unmeasured, and the eval set has
@@ -573,7 +575,7 @@ return events is None or sum(1 for t in events if now - t < self.window) < self.
 
 ## Applied
 
-Applied 2026-10-09 on branch `claude/intelligent-mccarthy-xxm00i`, one commit per finding.
+Applied 2026-10-09 in [pull request #1](https://github.com/Melwis880/smb-website-assistant/pull/1), one commit per finding.
 `MOCK_LLM=1 pytest -q` passed after every commit. The suite went from 149 to **158 tests**.
 All numbers are measured on the fictional demo data in mock mode, on the same machine, before and
 after, with the same script.
@@ -631,7 +633,7 @@ rarely has more than 20 chats waiting on Claude at the same moment (**estimate**
 - **F6 (single source of truth for config):** it touches every setting, `docker-compose.yml` and
   `.env.example` at once. It deserves its own reviewed change with the CI Docker smoke test.
   Only the message length was unified here (part of F3).
-- **F8 (Haiku 5.5):** the brief fixes Haiku 4.5 as the default, and a switch needs a real-model eval
+- **F8 (Haiku 5.5):** the project brief fixes Haiku 4.5 as the default, and a switch needs a real-model eval
   with a key plus a thinking setting. Not possible in mock mode.
 - **F10 (inverted index):** BM25 takes 0.19 ms over 26 sections. Only worth doing past about 2,000 sections.
 - **F12 (pure-ASGI header middleware):** expected gain is well under 1 ms per request and not measured.
