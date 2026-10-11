@@ -57,7 +57,7 @@ set was written by the builder after the retriever, so it is a smoke test, not a
 
 | | Before (today) | After (with assistant) |
 |---|---|---|
-| Answer to a routine question (price, hours, insurance) | Phone/email during opening hours; minutes to next working day (**estimate**, assumes a typical small-clinic front desk) | Immediate, 24/7, with the source section shown (demo: retrieval + routing < 1 ms per turn in mock mode; real-model latency **not measured**) |
+| Answer to a routine question (price, hours, insurance) | Phone/email during opening hours; minutes to next working day (**estimate**, assumes a typical small-clinic front desk) | Immediate, 24/7, with the source section shown (demo data: median < 1 ms per turn in mock mode, which excludes the model call; real-model latency **not measured**) |
 | Off-topic or unknown questions | Handled by staff | Handed off with phone/email instead of guessed (demo: 9/10 off-topic handed off) |
 | Booking request outside opening hours | Voicemail or lost visitor (**estimate**) | Validated, consented lead in `leads.csv` / Google Sheet within seconds (demo flow tested) |
 | Data quality of booking requests | Free-text emails, missing phone numbers (**estimate**) | Name + valid email/phone + preferred time + consent timestamp, every time (enforced in code) |
