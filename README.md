@@ -7,7 +7,9 @@ to a human when it doesn't know, and captures booking requests as **consented, v
 > **Demo:** the business is *Brightsmile Dental*, a **fictional** dental clinic. Every name,
 > price, address and policy in `data/` is invented.
 
-![Widget answering a price question, declining an off-topic question and refusing an injection attempt](docs/widget-demo.png)
+![Two views of the chat widget in mock mode. Left: it answers "How much is a root canal on a molar?" with EUR 750 and cites prices.md, then declines "What's the capital of France?" and gives the clinic's phone and email. Right: an HTML-tag injection attempt is shown as plain text and refused.](docs/widget-demo.png)
+
+*Captured from a mock-mode run (`MOCK_LLM=1`) with [`docs/capture-widget-demo.js`](docs/capture-widget-demo.js).*
 
 ## What it does
 
